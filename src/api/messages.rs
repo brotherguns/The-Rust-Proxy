@@ -11,8 +11,8 @@ use std::convert::Infallible;
 
 use super::tools::{
     has_trusted_tool_prompt, looks_like_tool_call, looks_like_tool_prompt, looks_like_tool_refusal,
-    normalize_tools_for_prompt, parse_tool_uses, tool_choice_to_prompt_value, tools_prompt,
-    ToolModeStreamBuffer,
+    normalize_tools_for_prompt, parse_tool_uses, should_suppress_tool_text,
+    tool_choice_to_prompt_value, tools_prompt, ToolModeStreamBuffer,
 };
 use crate::account_pool::AccountPool;
 use crate::models::resolve_model;
@@ -456,7 +456,7 @@ async fn handler(State(pool): State<AccountPool>, Json(req): Json<AnthropicReque
                     yield Ok(axum::response::sse::Event::default().data(delta.to_string()));
                 } else {
                     let parsed_calls = parse_tool_uses(&reply);
-                    if parsed_calls.is_empty() {
+                    if parsed_calls.is_empty() && !should_suppress_tool_text(&reply) {
                         for text_part in held_text {
                             if !text_part.is_empty() {
                                 if !text_block_open {
@@ -474,6 +474,9 @@ async fn handler(State(pool): State<AccountPool>, Json(req): Json<AnthropicReque
                                 yield Ok(axum::response::sse::Event::default().data(delta.to_string()));
                             }
                         }
+                    }
+                    if parsed_calls.is_empty() && should_suppress_tool_text(&reply) {
+                        tracing::debug!("Suppressing unconverted Anthropic tool-like stream reply: {}", reply);
                     }
                     let _ = crate::usage::record_tokens(
                         &session_id,

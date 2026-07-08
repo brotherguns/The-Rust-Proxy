@@ -16,8 +16,8 @@ use super::format::{parse_thinking, split_stream_text};
 use super::tools::{
     has_trusted_tool_prompt, is_tool_call_incomplete, looks_like_tool_call, looks_like_tool_prompt,
     looks_like_tool_refusal, mark_trusted_tool_prompt, normalize_tool_messages,
-    normalize_tools_for_prompt, parse_tool_uses, tool_choice_to_prompt_value, tools_prompt,
-    ToolModeStreamBuffer,
+    normalize_tools_for_prompt, parse_tool_uses, should_suppress_tool_text,
+    tool_choice_to_prompt_value, tools_prompt, ToolModeStreamBuffer,
 };
 
 use crate::account_pool::AccountPool;
@@ -269,25 +269,6 @@ async fn chat_handler(State(pool): State<AccountPool>, Json(req): Json<ChatReque
                     }
                     Err(e) => {
                         stream_failed = true;
-                        if tool_mode_expected {
-                            for text_part in tool_buffer.push(&format!("[ERROR] {}", e)) {
-                                let error_chunk = serde_json::json!({
-                                    "id": id,
-                                    "object": "chat.completion.chunk",
-                                    "created": created,
-                                    "model": model_clone,
-                                    "choices": [{
-                                        "index": 0,
-                                        "delta": {
-                                            "content": text_part
-                                        },
-                                        "finish_reason": null,
-                                    }]
-                                });
-                                yield Ok(Event::default().data(error_chunk.to_string()));
-                            }
-                            break;
-                        }
                         let error_chunk = serde_json::json!({
                             "id": id,
                             "object": "chat.completion.chunk",
@@ -400,21 +381,25 @@ async fn chat_handler(State(pool): State<AccountPool>, Json(req): Json<ChatReque
                     }
                 }
 
-                for text_part in held_text {
-                    let chunk_obj = serde_json::json!({
-                        "id": id,
-                        "object": "chat.completion.chunk",
-                        "created": created,
-                        "model": model_clone,
-                        "choices": [{
-                            "index": 0,
-                            "delta": {
-                                "content": text_part,
-                            },
-                            "finish_reason": null,
-                        }]
-                    });
-                    yield Ok::<_, Infallible>(Event::default().data(chunk_obj.to_string()));
+                if !stream_failed && should_suppress_tool_text(&buffered_reply) {
+                    debug!("Suppressing unconverted tool-like stream reply: {}", buffered_reply);
+                } else {
+                    for text_part in held_text {
+                        let chunk_obj = serde_json::json!({
+                            "id": id,
+                            "object": "chat.completion.chunk",
+                            "created": created,
+                            "model": model_clone,
+                            "choices": [{
+                                "index": 0,
+                                "delta": {
+                                    "content": text_part,
+                                },
+                                "finish_reason": null,
+                            }]
+                        });
+                        yield Ok::<_, Infallible>(Event::default().data(chunk_obj.to_string()));
+                    }
                 }
             }
 

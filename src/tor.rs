@@ -17,11 +17,11 @@ pub async fn start_all_tor_instances(ports: &[u16]) -> Result<(Vec<Child>, Vec<S
 
     for &port in ports {
         let url = format!("socks5h://127.0.0.1:{}", port);
-        proxy_urls.push(url.clone());
 
         // Check if already running on this port
         if tor_socks_reachable("127.0.0.1", port).await {
             info!("Tor SOCKS proxy already running on port {}", port);
+            proxy_urls.push(url);
             // We don't spawn a new one; assume it's managed externally.
             continue;
         }
@@ -75,12 +75,16 @@ pub async fn start_all_tor_instances(ports: &[u16]) -> Result<(Vec<Child>, Vec<S
             continue;
         }
 
+        proxy_urls.push(url);
         children.push(child);
     }
 
+    if proxy_urls.is_empty() && !ports.is_empty() {
+        anyhow::bail!("no Tor SOCKS proxies became reachable");
+    }
+
     if children.is_empty() && !proxy_urls.is_empty() {
-        // If we didn't start any new instances, but we have proxy URLs, maybe they are already running.
-        // We'll still return the URLs; the caller will use them.
+        // If we didn't start any new instances, but we have proxy URLs, they are already running.
         info!("Using existing Tor instances on ports: {:?}", proxy_urls);
     }
 

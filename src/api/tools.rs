@@ -19,10 +19,10 @@ Rules:
 - Escape backslashes in Windows paths.
 - Escape quotes and newlines correctly in JSON strings.
 
-Use this exact tool-call format:
+Use this exact wrapper format. Replace TOOL_NAME_FROM_AVAILABLE_TOOLS with a real tool name from the Available tools list, and replace INPUT_JSON with that tool's input object:
 
 <tool_use>
-{"name":"tool_name","input":{"key":"value"}}
+{"name":"TOOL_NAME_FROM_AVAILABLE_TOOLS","input":INPUT_JSON}
 </tool_use>
 
 If you need to communicate before continuing to tool calls, use this supported pattern:
@@ -30,7 +30,7 @@ If you need to communicate before continuing to tool calls, use this supported p
 Short user-visible status line.
 <thinking>brief private reasoning about the next tool step</thinking>
 <tool_use>
-{"name":"tool_name","input":{"key":"value"}}
+{"name":"TOOL_NAME_FROM_AVAILABLE_TOOLS","input":INPUT_JSON}
 </tool_use>
 
 After a tool result is provided, either output one or more next tool calls in the same format or answer the user normally if no more tools are needed."#;
@@ -160,9 +160,20 @@ fn extract_fenced_json(text: &str) -> Option<Value> {
 }
 
 fn tool_value_to_call(value: &Value) -> Option<(String, Value)> {
-    let name = value.get("name")?.as_str()?.to_string();
+    let name = value.get("name")?.as_str()?.trim().to_string();
+    if name.is_empty() || is_placeholder_tool_name(&name) {
+        return None;
+    }
+
     let input = value.get("input").cloned().unwrap_or_else(|| json!({}));
     Some((name, input))
+}
+
+fn is_placeholder_tool_name(name: &str) -> bool {
+    matches!(
+        name,
+        "tool_name" | "TOOL_NAME" | "TOOL_NAME_FROM_AVAILABLE_TOOLS"
+    )
 }
 
 fn parse_all_tagged_json(reply: &str, tag: &str) -> Vec<Value> {
@@ -264,6 +275,12 @@ pub fn is_tool_call_incomplete(reply: &str) -> bool {
     let trimmed = strip_runtime_tags(reply);
     (trimmed.contains("<\u{200B}tool_use>") && !trimmed.contains("<\u{200B}/tool_use>"))
         || (looks_like_tool_call(&trimmed) && parse_tool_use(&trimmed).is_none())
+}
+
+pub fn should_suppress_tool_text(reply: &str) -> bool {
+    let cleaned = strip_runtime_tags(reply);
+    let trimmed = cleaned.trim();
+    !trimmed.is_empty() && (looks_like_tool_call(trimmed) || is_tool_call_incomplete(trimmed))
 }
 
 #[derive(Default)]

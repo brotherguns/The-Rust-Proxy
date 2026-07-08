@@ -517,6 +517,7 @@ async fn connect_websocket_with_proxy(
 
     if let Some(proxy) = proxy_url {
         let (host, port) = parse_socks5_proxy(proxy)?;
+        let proxy_endpoint = format!("{}:{}", host, port);
         let target_uri = tungstenite::http::Uri::try_from(uri)?;
         let target_host = target_uri.host().unwrap_or("agents.use.ai");
         let target_port = target_uri.port_u16().unwrap_or(443);
@@ -526,8 +527,8 @@ async fn connect_websocket_with_proxy(
             Socks5Stream::connect((host, port), (target_host, target_port)),
         )
         .await
-        .map_err(|_| anyhow!("SOCKS connect timeout"))?
-        .map_err(|e| anyhow!("SOCKS connection failed: {}", e))?;
+        .map_err(|_| anyhow!("SOCKS connect timeout via {}", proxy_endpoint))?
+        .map_err(|e| anyhow!("SOCKS connection failed via {}: {}", proxy_endpoint, e))?;
 
         let config = WebSocketConfig::default();
         let (ws, _) =
@@ -547,16 +548,30 @@ async fn connect_websocket_with_proxy(
 }
 
 fn parse_socks5_proxy(proxy: &str) -> Result<(&str, u16)> {
-    if !proxy.starts_with("socks5h://") && !proxy.starts_with("socks5://") {
+    let Some(rest) = proxy
+        .strip_prefix("socks5h://")
+        .or_else(|| proxy.strip_prefix("socks5://"))
+    else {
         anyhow::bail!("only socks5 proxies supported for WebSocket");
+    };
+
+    let host_port = rest.trim_end_matches('/');
+    if host_port.is_empty()
+        || host_port.contains('@')
+        || host_port.contains('/')
+        || host_port.contains('?')
+        || host_port.contains('#')
+    {
+        anyhow::bail!("SOCKS proxy URL must be socks5://host:port without credentials, path, query, or fragment");
     }
-    let host_port = proxy
-        .split("://")
-        .nth(1)
-        .ok_or_else(|| anyhow!("invalid proxy URL"))?;
+
     let (host, port) = host_port
         .rsplit_once(':')
         .ok_or_else(|| anyhow!("proxy requires port"))?;
+    if host.is_empty() {
+        anyhow::bail!("proxy requires host");
+    }
+
     Ok((host, port.parse::<u16>()?))
 }
 
