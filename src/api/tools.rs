@@ -3,6 +3,7 @@ use serde_json::{json, Value};
 use super::format::split_stream_text;
 
 const TOOL_STREAM_GUARD_CHARS: usize = 96;
+const TOOL_MARKER_GUARD_CHARS: usize = 32;
 const TOOL_PROMPT: &str = r#"You may be given tools.
 
 When tools are available and the task requires reading, searching, creating, editing, patching, or inspecting files, respond with one or more tool calls.
@@ -287,35 +288,54 @@ pub fn should_suppress_tool_text(reply: &str) -> bool {
 pub struct ToolModeStreamBuffer {
     reply: String,
     pending: String,
-    normal_text: bool,
+    buffering_tool: bool,
 }
 
 impl ToolModeStreamBuffer {
     pub fn push(&mut self, text: &str) -> Vec<String> {
         self.reply.push_str(text);
-        if self.normal_text {
-            return split_stream_text(text);
-        }
-
         self.pending.push_str(text);
-        let trimmed = self.pending.trim_start();
-        if starts_like_tool_syntax(trimmed) {
+
+        if self.buffering_tool {
             return Vec::new();
         }
 
-        if self.pending.chars().count() <= TOOL_STREAM_GUARD_CHARS
-            && maybe_tool_syntax_prefix(trimmed)
+        let trimmed = self.pending.trim_start();
+        if starts_like_tool_syntax(trimmed) {
+            self.buffering_tool = true;
+            return Vec::new();
+        }
+
+        if let Some(marker_idx) = first_tool_marker_index(&self.pending) {
+            self.buffering_tool = true;
+            let visible = self.pending[..marker_idx].to_string();
+            self.pending = self.pending[marker_idx..].to_string();
+            return split_stream_text(&visible);
+        }
+
+        let keep_chars = TOOL_MARKER_GUARD_CHARS;
+        let pending_chars = self.pending.chars().count();
+        if pending_chars <= keep_chars
+            && (maybe_tool_syntax_prefix(trimmed) || maybe_tool_marker_suffix(&self.pending))
         {
             return Vec::new();
         }
 
-        self.normal_text = true;
-        let pending = std::mem::take(&mut self.pending);
-        split_stream_text(&pending)
+        let split_at = if pending_chars > keep_chars {
+            byte_index_after_chars(&self.pending, pending_chars - keep_chars)
+        } else if pending_chars <= TOOL_STREAM_GUARD_CHARS && maybe_tool_syntax_prefix(trimmed) {
+            return Vec::new();
+        } else {
+            self.pending.len()
+        };
+
+        let emit = self.pending[..split_at].to_string();
+        self.pending = self.pending[split_at..].to_string();
+        split_stream_text(&emit)
     }
 
     pub fn finish(self) -> (String, Vec<String>) {
-        if self.normal_text || self.pending.is_empty() {
+        if self.buffering_tool || self.pending.is_empty() {
             (self.reply, Vec::new())
         } else {
             let pending = self.pending;
@@ -343,6 +363,63 @@ fn maybe_tool_syntax_prefix(text: &str) -> bool {
         .any(|tag| tag.starts_with(&lower))
         || lower.starts_with("<\u{200B}thinking")
         || lower.starts_with("<thinking")
+}
+
+fn first_tool_marker_index(text: &str) -> Option<usize> {
+    let lower = text.to_lowercase();
+    [
+        "<\u{200B}thinking",
+        "<thinking",
+        "<\u{200B}tool_use",
+        "<tool_use",
+    ]
+    .iter()
+    .filter_map(|marker| lower.find(marker))
+    .min()
+}
+
+fn maybe_tool_marker_suffix(text: &str) -> bool {
+    let lower = text.to_lowercase();
+    let max_marker_len = [
+        "<\u{200B}thinking",
+        "<thinking",
+        "<\u{200B}tool_use",
+        "<tool_use",
+    ]
+    .iter()
+    .map(|marker| marker.chars().count())
+    .max()
+    .unwrap_or(0);
+    let suffix = last_chars(&lower, max_marker_len.saturating_sub(1));
+
+    [
+        "<\u{200B}thinking",
+        "<thinking",
+        "<\u{200B}tool_use",
+        "<tool_use",
+    ]
+    .iter()
+    .any(|marker| marker.starts_with(&suffix))
+}
+
+fn byte_index_after_chars(text: &str, char_count: usize) -> usize {
+    if char_count == 0 {
+        return 0;
+    }
+
+    text.char_indices()
+        .nth(char_count)
+        .map(|(idx, _)| idx)
+        .unwrap_or(text.len())
+}
+
+fn last_chars(text: &str, count: usize) -> String {
+    if count == 0 {
+        return String::new();
+    }
+
+    let len = text.chars().count();
+    text.chars().skip(len.saturating_sub(count)).collect()
 }
 
 fn normalize_openai_tool_schema(tool: &Value) -> Option<Value> {
@@ -450,5 +527,43 @@ mod tests {
             .contains("<thinking>brief private reasoning about the next tool step</thinking>"));
         assert!(prompt.contains("<tool_use>"));
         assert!(!prompt.contains("Do not include any text before or after the tool call"));
+    }
+
+    #[test]
+    fn stream_buffer_captures_tool_call_after_visible_preamble() {
+        let mut buffer = ToolModeStreamBuffer::default();
+        let mut visible = Vec::new();
+
+        visible.extend(buffer.push("Need implement multi-file. enter plan mode. "));
+        visible.extend(buffer.push("<tool_use>"));
+        visible.extend(buffer.push("{\"name\":\"EnterPlanMode\",\"input\":{}}"));
+        visible.extend(buffer.push("</tool_use>"));
+
+        let (reply, held) = buffer.finish();
+        assert_eq!(
+            visible.concat(),
+            "Need implement multi-file. enter plan mode. "
+        );
+        assert!(held.is_empty());
+        assert!(reply.contains("<tool_use>"));
+        assert_eq!(parse_tool_uses(&reply).len(), 1);
+    }
+
+    #[test]
+    fn stream_buffer_suppresses_thinking_before_tool_call() {
+        let mut buffer = ToolModeStreamBuffer::default();
+        let mut visible = Vec::new();
+
+        visible.extend(buffer.push("I’ll inspect files.\n"));
+        visible.extend(buffer.push("<thinking>Need inspect files.</thinking>"));
+        visible.extend(buffer.push("<tool_use>"));
+        visible.extend(buffer.push("{\"name\":\"Agent\",\"input\":{\"description\":\"Explore\"}}"));
+        visible.extend(buffer.push("</tool_use>"));
+
+        let (reply, held) = buffer.finish();
+        assert_eq!(visible.concat(), "I’ll inspect files.\n");
+        assert!(held.is_empty());
+        assert!(reply.contains("<thinking>Need inspect files.</thinking>"));
+        assert_eq!(parse_tool_uses(&reply).len(), 1);
     }
 }
