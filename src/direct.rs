@@ -356,6 +356,18 @@ async fn create_account_once(proxy_url: Option<&str>) -> Result<Account> {
 
     let opaque_token = body["session"]["token"].as_str().unwrap_or("").to_string();
 
+    // The agent gateway now requires an app_token query param on the WS URL.
+    // It's issued alongside session_data by get-session.
+    let app_token = body["session"]["appToken"]
+        .as_str()
+        .or_else(|| body["appToken"].as_str())
+        .map(|s| s.to_string());
+    if let Some(at) = &app_token {
+        debug!("session appToken: {}...", &at[..at.len().min(16)]);
+    } else {
+        debug!("session appToken not present in get-session response");
+    }
+
     // Decode JWT header+payload for debugging (no signature verification).
     debug!(
         "accessToken JWT (first 80 chars): {}...",
@@ -401,6 +413,7 @@ async fn create_account_once(proxy_url: Option<&str>) -> Result<Account> {
         user_id,
         cookie_header,
         token,
+        app_token,
         proxy_url: proxy_url.map(String::from),
         born: now_secs(),
     })
@@ -416,17 +429,18 @@ async fn create_account_once(proxy_url: Option<&str>) -> Result<Account> {
 /// The get-session response includes a set-auth-jwt header containing the
 /// short-lived worker JWT. This is the same JWT the browser gets from
 /// authClient.token() and sends as ?token=<JWT> in the WS URL.
-async fn refresh_session(account: &Account, proxy_url: Option<&str>) -> Result<(String, String)> {
+/// Refresh the session cookies and extract a fresh worker auth JWT and app attestation token.
+async fn refresh_session(
+    account: &Account,
+    proxy_url: Option<&str>,
+) -> Result<(String, String, Option<String>)> {
     let cfg = Config::load().unwrap_or_default();
     let auth_base = cfg.direct.auth_base;
 
     let (client, jar) = build_client_with_jar(proxy_url)?;
     let url = "https://api.use.ai".parse()?;
 
-    // Seed the jar with ONLY the long-lived session_token cookie. If we also
-    // seed session_data, the jar ends up with two session_data entries (old
-    // + new) and the server reads the stale one. If we seed nothing, the
-    // refreshed jar is missing session_token entirely.
+    // Seed the jar with the long-lived session_token cookie.
     for cookie_pair in account.cookie_header.split("; ") {
         if cookie_pair.starts_with("__Secure-better-auth.session_token=") {
             jar.add_cookie_str(cookie_pair, &url);
@@ -446,8 +460,7 @@ async fn refresh_session(account: &Account, proxy_url: Option<&str>) -> Result<(
         anyhow::bail!("refresh get-session failed: {} - {}", status, text);
     }
 
-    // 2. Extract the JWT from the set-auth-jwt response header. This is the
-    // short-lived worker token for the WS ?token= query param.
+    // Extract the short-lived JWT (token) from the set-auth-jwt header.
     let token = resp
         .headers()
         .get("set-auth-jwt")
@@ -455,26 +468,72 @@ async fn refresh_session(account: &Account, proxy_url: Option<&str>) -> Result<(
         .map(|s| s.to_string())
         .unwrap_or_else(|| account.token.clone());
 
-    // Consume the body so the connection is released.
-    let _body: Value = resp.json().await?;
+    // Consume the body so the connection can be reused.
+    let body: Value = resp.json().await?;
 
-    // The jar now has: original session_token + fresh session_data.
+    // The session data might contain the user ID – use it if available,
+    // otherwise fall back to the account's stored user_id.
+    let user_id = body["user"]["id"]
+        .as_str()
+        .unwrap_or(&account.user_id)
+        .to_string();
+
+    // 2. Fetch the app attestation token.
+    let app_token = match fetch_app_attestation(&client, &auth_base, &user_id).await {
+        Ok(at) => Some(at),
+        Err(e) => {
+            warn!("Failed to fetch app attestation token: {}", e);
+            account.app_token.clone() // fallback to stored (if any)
+        }
+    };
+
+    // The jar now has the fresh session_data.
     let cookie_header = jar
         .cookies(&url)
         .and_then(|value| value.to_str().ok().map(ToOwned::to_owned))
         .unwrap_or_else(|| account.cookie_header.clone());
 
     debug!(
-        "Refreshed session for user {} (token: {}...)",
+        "Refreshed session for user {} (token: {}..., app_token: {})",
         account.user_id.chars().take(8).collect::<String>(),
         if token.is_empty() {
             "(none)"
         } else {
             &token[..token.len().min(16)]
-        }
+        },
+        app_token
+            .as_deref()
+            .map(|s| &s[..s.len().min(16)])
+            .unwrap_or("(none)")
     );
 
-    Ok((cookie_header, token))
+    Ok((cookie_header, token, app_token))
+}
+
+/// Fetch the app attestation token from the `/v1/auth/app-attestation` endpoint.
+async fn fetch_app_attestation(client: &Client, auth_base: &str, user_id: &str) -> Result<String> {
+    let response = client
+        .post(format!("{}/app-attestation", auth_base))
+        .header("Origin", "https://use.ai")
+        .header("Referer", "https://use.ai/")
+        .json(&serde_json::json!({ "userId": user_id }))
+        .send()
+        .await
+        .map_err(|e| anyhow!("app-attestation request failed: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        anyhow::bail!("app-attestation request failed: {} - {}", status, text);
+    }
+
+    let body: Value = response.json().await?;
+    let app_token = body["token"]
+        .as_str()
+        .ok_or_else(|| anyhow!("app-attestation response missing 'token'"))?
+        .to_string();
+
+    Ok(app_token)
 }
 
 // ---------- WebSocket connection with SOCKS5 ----------
@@ -531,19 +590,79 @@ async fn connect_websocket_with_proxy(
         .map_err(|e| anyhow!("SOCKS connection failed via {}: {}", proxy_endpoint, e))?;
 
         let config = WebSocketConfig::default();
-        let (ws, _) =
-            client_async_tls_with_config(request, sock_stream.into_inner(), Some(config), None)
-                .await?;
-        Ok(ws)
+        match client_async_tls_with_config(request, sock_stream.into_inner(), Some(config), None)
+            .await
+        {
+            Ok((ws, response)) => {
+                debug!(
+                    "WS upgrade response via {}: {} (host: {})",
+                    proxy_endpoint,
+                    response.status(),
+                    proxy_url.unwrap_or("?")
+                );
+                Ok(ws)
+            }
+            Err(e) => {
+                // tungstenite wraps the HTTP rejection inside WebSocketError::Http(...).
+                if let tungstenite::Error::Http(http_response) = &e {
+                    let status = http_response.status();
+                    let body_preview = match http_response.body().as_ref() {
+                        Some(bytes) => String::from_utf8_lossy(bytes).to_string(),
+                        None => String::new(),
+                    };
+                    warn!(
+                        "WS upgrade rejected via {}: status={} body={:?}",
+                        proxy_endpoint, status, body_preview
+                    );
+                    // Surface the status code to the caller so it can react
+                    // (rotate proxy/account) instead of opaque retry failures.
+                    return Err(anyhow!(
+                        "WS upgrade rejected by agent gateway: {} - {}",
+                        status,
+                        body_preview
+                    ));
+                }
+                warn!("WS upgrade error via {}: {}", proxy_endpoint, e);
+                Err(anyhow!("WS upgrade failed via {}: {}", proxy_endpoint, e))
+            }
+        }
     } else {
         let config = WebSocketConfig::default();
-        let (ws, _) = timeout(
+        match timeout(
             open_timeout,
             tokio_tungstenite::connect_async_with_config(request, Some(config), true),
         )
         .await
-        .map_err(|_| anyhow!("WebSocket open timeout"))??;
-        Ok(ws)
+        {
+            Ok(Ok((ws, response))) => {
+                debug!("WS upgrade response (direct): {}", response.status());
+                Ok(ws)
+            }
+            Ok(Err(e)) => {
+                if let tungstenite::Error::Http(http_response) = &e {
+                    let status = http_response.status();
+                    let body_preview = match http_response.body().as_ref() {
+                        Some(bytes) => String::from_utf8_lossy(bytes).to_string(),
+                        None => String::new(),
+                    };
+                    warn!(
+                        "WS upgrade rejected (direct): status={} body={:?}",
+                        status, body_preview
+                    );
+                    return Err(anyhow!(
+                        "WS upgrade rejected by agent gateway: {} - {}",
+                        status,
+                        body_preview
+                    ));
+                }
+                warn!("WS upgrade error (direct): {}", e);
+                Err(anyhow!("WS upgrade failed (direct): {}", e))
+            }
+            Err(_) => {
+                warn!("WS upgrade timed out (direct)");
+                Err(anyhow!("WebSocket open timeout"))
+            }
+        }
     }
 }
 
@@ -1110,23 +1229,34 @@ pub async fn stream_completion(
         // __Secure-better-auth.session_data JWT has a 60-second TTL, so
         // pooled accounts must be refreshed or the agent gateway rejects
         // with AUTH_REQUIRED (4001).
-        let (cookie_header, token) = match refresh_session(&account, account_proxy).await {
-            Ok((c, t)) => (c, t),
-            Err(e) => {
-                debug!("Session refresh failed ({}), using original cookies", e);
-                (account.cookie_header.clone(), account.token.clone())
-            }
-        };
+        let (cookie_header, token, app_token) =
+            match refresh_session(&account, account_proxy).await {
+                Ok((c, t, at)) => (c, t, at),
+                Err(e) => {
+                    debug!("Session refresh failed ({}), using original cookies", e);
+                    (
+                        account.cookie_header.clone(),
+                        account.token.clone(),
+                        account.app_token.clone(),
+                    )
+                }
+            };
 
         // Build the full WS URI with the JWT token as a query parameter.
         // use.ai's agent gateway authenticates via ?token=<JWT> (from the
         // /api/auth/token endpoint), NOT via Authorization header. The
         // browser does: new WebSocket(baseUrl + "/" + chatId + "?token=...")
-        let uri = if token.is_empty() {
-            uri_base.clone()
-        } else {
-            format!("{}&token={}", uri_base, token)
-        };
+        // and also appends &app_token=<value>.
+        let mut uri = uri_base.clone();
+        if !token.is_empty() {
+            uri.push_str(&format!("&token={}", token));
+        }
+        if let Some(app_token) = app_token
+            .as_ref()
+            .filter(|at| !at.is_empty())
+        {
+            uri.push_str(&format!("&app_token={}", app_token));
+        }
 
         let mut ws_stream = connect_websocket_with_proxy(
             &uri,
@@ -1285,6 +1415,7 @@ mod tests {
             user_id: "user_test".to_string(),
             cookie_header: String::new(),
             token: String::new(),
+            app_token: None,
             proxy_url: None,
             born: 0.0,
         }

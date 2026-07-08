@@ -21,6 +21,10 @@ pub struct Account {
     pub user_id: String,
     pub cookie_header: String,
     pub token: String,
+    /// use.ai's agent gateway now requires an `app_token` query param on the
+    /// WS URL (in addition to the JWT `token`). It is issued by get-session
+    /// alongside session_data and must be refreshed alongside the session.
+    pub app_token: Option<String>,
     /// The proxy this account was created through. Must be reused for
     /// session refresh and the WS connection, because use.ai binds the
     /// session to the signup IP. Connecting from a different IP causes
