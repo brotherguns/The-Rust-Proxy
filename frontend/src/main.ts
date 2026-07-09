@@ -321,7 +321,6 @@ function renderModelOptions(models: ModelList["data"]): void {
     state.model = modelList[0]?.id ?? "gpt-5-4";
     localStorage.setItem("leech-model", state.model);
   }
-  setText("#composer-model", state.model);
 }
 
 function renderMessages(): void {
@@ -357,8 +356,6 @@ function renderMessages(): void {
 
 function renderWorkspace(): void {
   const list = document.querySelector<HTMLElement>("#file-list");
-  const editor = document.querySelector<HTMLTextAreaElement>("#file-editor");
-  const fileName = document.querySelector<HTMLInputElement>("#file-name");
   const meta = document.querySelector<HTMLElement>("#file-meta");
   const file = selectedFile();
 
@@ -375,17 +372,9 @@ function renderWorkspace(): void {
       : `<p class="empty-files">No browser files yet.</p>`;
   }
 
-  if (editor) {
-    editor.value = file?.content ?? "";
-    editor.disabled = !file;
-  }
-  if (fileName) {
-    fileName.value = file?.name ?? "";
-    fileName.disabled = !file;
-  }
   if (meta) {
     meta.textContent = file
-      ? `Stored in this browser • ${formatNumber(file.content.length)} chars`
+      ? `${file.name} stored locally, ${formatNumber(file.content.length)} chars`
       : "Stored only in this browser";
   }
 
@@ -434,23 +423,6 @@ async function createNewFile(): Promise<void> {
   await refreshWorkspace();
 }
 
-async function saveSelectedFileFromEditor(): Promise<void> {
-  const file = selectedFile();
-  const editor = document.querySelector<HTMLTextAreaElement>("#file-editor");
-  const fileName = document.querySelector<HTMLInputElement>("#file-name");
-  if (!file || !editor || !fileName) return;
-
-  const updated: WorkspaceFile = {
-    ...file,
-    content: editor.value,
-    name: fileName.value.trim() || file.name,
-    updatedAt: Date.now()
-  };
-  await saveWorkspaceFile(updated);
-  state.selectedFileId = updated.id;
-  await refreshWorkspace();
-}
-
 async function deleteSelectedFileFromWorkspace(): Promise<void> {
   const file = selectedFile();
   if (!file) return;
@@ -496,7 +468,7 @@ function setSending(isSending: boolean): void {
   const prompt = document.querySelector<HTMLTextAreaElement>("#prompt");
   if (send) {
     send.disabled = isSending;
-    send.textContent = isSending ? "Sending" : "Send";
+    send.textContent = isSending ? "…" : "↑";
   }
   if (prompt) {
     prompt.disabled = isSending;
@@ -840,9 +812,8 @@ function attachEvents(): void {
   const refreshButton = document.querySelector<HTMLButtonElement>("#refresh-status");
   const viewToggle = document.querySelector<HTMLButtonElement>("#view-toggle");
   const fileInput = document.querySelector<HTMLInputElement>("#file-input");
-  const importFilesButton = document.querySelector<HTMLButtonElement>("#import-files");
+  const attachFileButton = document.querySelector<HTMLButtonElement>("#attach-file");
   const newFileButton = document.querySelector<HTMLButtonElement>("#new-file");
-  const saveFileButton = document.querySelector<HTMLButtonElement>("#save-file");
   const deleteFileButton = document.querySelector<HTMLButtonElement>("#delete-file");
   const applyReplyButton = document.querySelector<HTMLButtonElement>("#apply-reply");
 
@@ -866,7 +837,6 @@ function attachEvents(): void {
   select?.addEventListener("change", () => {
     state.model = select.value;
     localStorage.setItem("leech-model", state.model);
-    setText("#composer-model", state.model);
   });
 
   newChatButton?.addEventListener("click", newChat);
@@ -875,14 +845,13 @@ function attachEvents(): void {
     state.view = state.view === "dashboard" ? "chat" : "dashboard";
     applyView();
   });
-  importFilesButton?.addEventListener("click", () => fileInput?.click());
+  attachFileButton?.addEventListener("click", () => fileInput?.click());
   fileInput?.addEventListener("change", () => {
     void importFiles(fileInput.files).finally(() => {
       fileInput.value = "";
     });
   });
   newFileButton?.addEventListener("click", () => { void createNewFile(); });
-  saveFileButton?.addEventListener("click", () => { void saveSelectedFileFromEditor(); });
   deleteFileButton?.addEventListener("click", () => { void deleteSelectedFileFromWorkspace(); });
   applyReplyButton?.addEventListener("click", () => { void applyLatestReplyToSelectedFile(); });
 
@@ -916,28 +885,14 @@ function renderShell(): void {
         <button id="new-chat" class="primary-action" type="button">New chat</button>
         <button id="view-toggle" class="secondary-action" type="button">Open dashboard</button>
 
-        <section class="rail-section">
-          <label for="model-select">Model</label>
-          <select id="model-select">
-            <option value="${escapeHtml(state.model)}">${escapeHtml(state.model)}</option>
-          </select>
-        </section>
-
         <section class="rail-section workspace-section">
           <div class="rail-heading">
             <span>Files</span>
-            <button id="import-files" type="button">Import</button>
-          </div>
-          <input id="file-input" type="file" multiple hidden />
-          <div id="file-list" class="file-list"></div>
-          <div class="file-editor-head">
-            <input id="file-name" class="file-name" type="text" placeholder="No file selected" disabled />
-            <span id="file-meta">Stored only in this browser</span>
-          </div>
-          <textarea id="file-editor" class="file-editor" rows="8" placeholder="Import or create a file to edit it locally." disabled></textarea>
-          <div class="file-actions">
             <button id="new-file" type="button">New</button>
-            <button id="save-file" type="button">Save</button>
+          </div>
+          <div id="file-list" class="file-list"></div>
+          <span id="file-meta" class="file-meta">Stored only in this browser</span>
+          <div class="file-actions">
             <button id="apply-reply" type="button">Apply reply</button>
             <button id="delete-file" type="button">Delete</button>
           </div>
@@ -1066,9 +1021,15 @@ function renderShell(): void {
 
         <form id="chat-form" class="composer">
           <textarea id="prompt" rows="1" placeholder="Message Leech-RS"></textarea>
+          <input id="file-input" type="file" multiple hidden />
           <div class="composer-actions">
-            <span id="composer-model">${escapeHtml(state.model)}</span>
-            <button id="send-button" type="submit">Send</button>
+            <div class="composer-left">
+              <button id="attach-file" class="icon-button" type="button" title="Attach files">+</button>
+              <select id="model-select" class="composer-model">
+                <option value="${escapeHtml(state.model)}">${escapeHtml(state.model)}</option>
+              </select>
+            </div>
+            <button id="send-button" class="send-icon" type="submit" title="Send">↑</button>
           </div>
         </form>
       </main>
@@ -1128,14 +1089,16 @@ function injectStyles(): void {
     .app {
       display: grid;
       grid-template-columns: 292px minmax(0, 1fr);
-      min-height: 100vh;
+      height: 100vh;
+      overflow: hidden;
     }
 
     .rail {
       display: flex;
       flex-direction: column;
       gap: 16px;
-      min-height: 100vh;
+      height: 100vh;
+      overflow-y: auto;
       padding: 18px;
       border-right: 1px solid var(--line);
       background: #15130f;
@@ -1171,8 +1134,7 @@ function injectStyles(): void {
     }
 
     .primary-action,
-    .secondary-action,
-    #send-button {
+    .secondary-action {
       border: 0;
       border-radius: 8px;
       background: var(--accent);
@@ -1182,8 +1144,7 @@ function injectStyles(): void {
       padding: 0 16px;
     }
 
-    .primary-action:hover,
-    #send-button:hover {
+    .primary-action:hover {
       background: var(--accent-dark);
     }
 
@@ -1214,21 +1175,9 @@ function injectStyles(): void {
     .rail-section label,
     .rail-section span,
     .thread-label,
-    .provider-list small,
-    .composer-actions span {
+    .provider-list small {
       color: var(--muted);
       font-size: 0.82rem;
-    }
-
-    select {
-      width: 100%;
-      min-height: 38px;
-      margin-top: 8px;
-      border: 1px solid var(--line-strong);
-      border-radius: 8px;
-      background: var(--surface-alt);
-      color: var(--ink);
-      padding: 0 10px;
     }
 
     .rail-heading {
@@ -1295,43 +1244,10 @@ function injectStyles(): void {
 
     .file-item small,
     .empty-files,
-    #file-meta {
+    .file-meta {
       color: var(--muted);
       font-size: 0.78rem;
       margin: 0;
-    }
-
-    .file-editor-head {
-      display: grid;
-      gap: 5px;
-    }
-
-    .file-name {
-      border: 1px solid var(--line-strong);
-      border-radius: 8px;
-      background: var(--surface-alt);
-      color: var(--ink);
-      min-height: 34px;
-      padding: 0 9px;
-      width: 100%;
-    }
-
-    .file-editor {
-      border: 1px solid var(--line-strong);
-      border-radius: 8px;
-      background: #100f0d;
-      color: var(--ink);
-      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-      font-size: 0.78rem;
-      min-height: 148px;
-      padding: 9px;
-      resize: vertical;
-      width: 100%;
-    }
-
-    .file-editor:disabled,
-    .file-name:disabled {
-      opacity: 0.62;
     }
 
     .file-actions {
@@ -1365,7 +1281,8 @@ function injectStyles(): void {
       display: grid;
       grid-template-rows: auto 1fr auto;
       min-width: 0;
-      min-height: 100vh;
+      height: 100vh;
+      overflow: hidden;
     }
 
     .topbar {
@@ -1642,11 +1559,11 @@ function injectStyles(): void {
       gap: 10px;
       width: min(900px, calc(100% - 56px));
       margin: 0 auto 24px;
-      border: 1px solid var(--line-strong);
-      border-radius: 8px;
-      background: var(--surface);
-      box-shadow: var(--shadow);
-      padding: 12px;
+      border: 1px solid rgba(243, 238, 230, 0.08);
+      border-radius: 20px;
+      background: #292826;
+      box-shadow: 0 18px 44px rgba(0, 0, 0, 0.28);
+      padding: 10px 12px;
     }
 
     textarea {
@@ -1674,25 +1591,79 @@ function injectStyles(): void {
       min-height: 42px;
     }
 
-    .composer-actions span {
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
+    .composer-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+
+    .icon-button,
+    .send-icon {
+      align-items: center;
+      border: 0;
+      border-radius: 999px;
+      display: inline-flex;
+      justify-content: center;
+      width: 30px;
+      height: 30px;
+      padding: 0;
+    }
+
+    .icon-button {
+      background: transparent;
+      color: var(--muted);
+      font-size: 1.35rem;
+      line-height: 1;
+    }
+
+    .icon-button:hover {
+      color: var(--ink);
+      background: rgba(243, 238, 230, 0.08);
+    }
+
+    .send-icon {
+      background: #f4f0e9;
+      color: #15130f;
+      font-size: 1.2rem;
+      font-weight: 800;
+    }
+
+    .send-icon:hover {
+      background: #fffaf2;
+    }
+
+    .composer-model {
+      border: 0;
+      border-radius: 999px;
+      background: transparent;
+      color: var(--ink);
+      min-width: 92px;
+      max-width: 260px;
+      min-height: 30px;
+      padding: 0 24px 0 8px;
     }
 
     @media (max-width: 920px) {
       .app {
         grid-template-columns: 1fr;
+        height: auto;
+        min-height: 100vh;
+        overflow: visible;
       }
 
       .rail {
         min-height: auto;
+        height: auto;
+        max-height: 42vh;
+        overflow-y: auto;
         border-right: 0;
         border-bottom: 1px solid var(--line);
       }
 
       .workspace {
         min-height: calc(100vh - 360px);
+        height: auto;
       }
 
       .topbar {
