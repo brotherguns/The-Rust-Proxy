@@ -9,4 +9,4 @@ cmds = [
 ]
 
 [start]
-cmd = "sh -c 'LEECH__SERVER__HOST=0.0.0.0 LEECH__SERVER__PORT=${PORT:-8000} ./target/release/leech-rs'"
+cmd = "sh -c 'LEECH__SERVER__HOST=0.0.0.0 LEECH__SERVER__PORT=${PORT:-8000} LEECH_DATA_DIR=${LEECH_DATA_DIR:-/data/usage} ./target/release/leech-rs'"

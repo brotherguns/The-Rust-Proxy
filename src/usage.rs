@@ -488,3 +488,15 @@ fn usage_data_dir() -> PathBuf {
         .map(PathBuf::from)
         .unwrap_or_else(|_| PathBuf::from(DATA_DIR))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn usage_data_dir_uses_env_override() {
+        std::env::set_var("LEECH_DATA_DIR", "/tmp/leech-usage-test");
+        assert_eq!(usage_data_dir(), PathBuf::from("/tmp/leech-usage-test"));
+        std::env::remove_var("LEECH_DATA_DIR");
+    }
+}
