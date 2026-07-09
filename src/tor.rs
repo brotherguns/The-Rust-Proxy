@@ -26,7 +26,7 @@ pub async fn start_all_tor_instances(ports: &[u16]) -> Result<(Vec<Child>, Vec<S
             continue;
         }
 
-        // Find tor.exe
+        // Find tor
         let tor_exe = find_tor_exe()?;
         info!("Starting Tor on port {} from: {}", port, tor_exe.display());
 
@@ -99,10 +99,10 @@ fn find_tor_exe() -> Result<PathBuf> {
     let exe_path = std::env::current_exe()?;
     let exe_dir = exe_path.parent().unwrap_or(Path::new("."));
     let candidates = [
-        exe_dir.join("tor").join("tor.exe"),
-        exe_dir.join("tor.exe"),
-        PathBuf::from("tor").join("tor.exe"),
-        PathBuf::from("tor.exe"),
+        exe_dir.join("tor").join("tor"),
+        exe_dir.join("tor"),
+        PathBuf::from("tor").join("tor"),
+        PathBuf::from("tor"),
     ];
 
     for candidate in candidates {
@@ -111,11 +111,11 @@ fn find_tor_exe() -> Result<PathBuf> {
         }
     }
 
-    if let Ok(path) = which::which("tor.exe") {
+    if let Ok(path) = which::which("tor") {
         return Ok(path);
     }
 
-    Err(anyhow!("tor.exe not found in ./tor/ or PATH"))
+    Err(anyhow!("tor not found in ./tor/ or PATH"))
 }
 
 /// Stop all Tor child processes.

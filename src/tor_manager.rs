@@ -92,7 +92,7 @@ impl TorManager {
 
         let mut child = cmd
             .spawn()
-            .map_err(|e| anyhow!("Failed to spawn tor.exe: {}", e))?;
+            .map_err(|e| anyhow!("Failed to spawn tor: {}", e))?;
         let start = std::time::Instant::now();
         while start.elapsed() < Duration::from_secs(20) {
             if tor_socks_reachable("127.0.0.1", port).await {
@@ -347,13 +347,13 @@ fn find_tor_exe() -> Result<PathBuf> {
     let exe_path = std::env::current_exe()?;
     let exe_dir = exe_path.parent().unwrap_or(Path::new("."));
     let candidates = [
-        exe_dir.join("tor").join("tor.exe"),
-        exe_dir.join("tor.exe"),
         exe_dir.join("tor").join("tor"),
         exe_dir.join("tor"),
-        PathBuf::from("tor").join("tor.exe"),
+        exe_dir.join("tor").join("tor"),
+        exe_dir.join("tor"),
         PathBuf::from("tor").join("tor"),
-        PathBuf::from("tor.exe"),
+        PathBuf::from("tor").join("tor"),
+        PathBuf::from("tor"),
         PathBuf::from("tor"),
     ];
 
@@ -367,7 +367,7 @@ fn find_tor_exe() -> Result<PathBuf> {
         return Ok(path);
     }
 
-    if let Ok(path) = which::which("tor.exe") {
+    if let Ok(path) = which::which("tor") {
         return Ok(path);
     }
 
