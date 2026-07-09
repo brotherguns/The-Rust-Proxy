@@ -12,6 +12,7 @@ mod provider_proxies;
 mod providers;
 mod sakana;
 mod scale_controller;
+mod temp_mail;
 mod tor_manager;
 mod usage;
 mod utils;
