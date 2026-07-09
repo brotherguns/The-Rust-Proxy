@@ -8,28 +8,14 @@ const MODEL_PRICING_PER_MILLION = {
     "gpt-5-mini": { input: 0.3, output: 1.2 },
     "gpt-4o": { input: 2.5, output: 10 },
     "gpt-4o-mini": { input: 0.15, output: 0.6 },
+    "claude-sonnet-5": { input: 3, output: 15 },
     "claude-sonnet-4-6": { input: 3, output: 15 },
     "claude-sonnet-4-5": { input: 3, output: 15 },
-    "claude-sonnet-5": { input: 3, output: 15 },
-    "glm-5-2": { input: 0.5, output: 2 },
     "claude-haiku-4-5": { input: 1, output: 5 },
     "claude-haiku-4": { input: 0.8, output: 4 },
     "sakana-namazu": { input: 0, output: 0 },
     "sakana-fugu": { input: 0, output: 0 },
     "sakana-fugu-ultra": { input: 0, output: 0 },
-    "gemini-3-1-pro": { input: 2, output: 12 },
-    "gemini-3-pro": { input: 2, output: 10 },
-    "gemini-3-flash": { input: 0.3, output: 2.5 },
-    "gemini-2.5-flash": { input: 0.3, output: 2.5 },
-    "deepseek-v4-pro": { input: 0.6, output: 3 },
-    "deepseek-v4-flash": { input: 0.2, output: 1 },
-    "deepseek-r1": { input: 0.55, output: 2.2 },
-    "grok-4": { input: 3, output: 15 },
-    "qwen-3-max": { input: 0.8, output: 2.4 },
-    "qwen-3-5-397b": { input: 0.8, output: 2.4 },
-    "kimi-k2-6": { input: 0.6, output: 2.5 },
-    "deepinfra-kimi-k2": { input: 0.5, output: 1.5 },
-    "llama-3-3-70b-versatile": { input: 0.3, output: 0.9 },
     "faceb-openai/gpt-5": { input: 2, output: 6 },
     "faceb-openai/gpt-5.1": { input: 2, output: 7 },
     "faceb-openai/gpt-5.2": { input: 2.5, output: 8 },
@@ -53,151 +39,37 @@ const MODEL_PRICING_PER_MILLION = {
     "faceb-qwen/qwen3.5-397b-a17b": { input: 0.8, output: 2.4 },
     "faceb-mistralai/ministral-14b-2512": { input: 0.1, output: 0.4 },
     "faceb-mistralai/ministral-8b-2512": { input: 0.06, output: 0.24 },
-    "faceb-mistralai/ministral-3b-2512": { input: 0.04, output: 0.16 }
+    "faceb-mistralai/ministral-3b-2512": { input: 0.04, output: 0.16 },
+    "gemini-3-1-pro": { input: 2, output: 12 },
+    "gemini-3-pro": { input: 2, output: 10 },
+    "gemini-3-flash": { input: 0.3, output: 2.5 },
+    "gemini-2.5-flash": { input: 0.3, output: 2.5 },
+    "deepseek-v4-pro": { input: 0.6, output: 3 },
+    "deepseek-v4-flash": { input: 0.2, output: 1 },
+    "deepseek-r1": { input: 0.55, output: 2.2 },
+    "grok-4": { input: 3, output: 15 },
+    "glm-5-2": { input: 0.5, output: 2 },
+    "qwen-3-max": { input: 0.8, output: 2.4 },
+    "qwen-3-5-397b": { input: 0.8, output: 2.4 },
+    "kimi-k2-6": { input: 0.6, output: 2.5 },
+    "deepinfra-kimi-k2": { input: 0.5, output: 1.5 },
+    "llama-3-3-70b-versatile": { input: 0.3, output: 0.9 }
 };
-const OPENCODE_MODELS = [
-    "gpt-5-5",
-    "gpt-5-4",
-    "gpt-5-3",
-    "gpt-5-1",
-    "gpt-5",
-    "gpt-5-mini",
-    "gpt-4o",
-    "gpt-4o-mini",
-    "claude-sonnet-5",
-    "claude-sonnet-4-6",
-    "claude-sonnet-4-5",
-    "claude-haiku-4-5",
-    "claude-haiku-4",
-    "sakana-namazu",
-    "sakana-fugu",
-    "sakana-fugu-ultra",
-    "faceb-openai/gpt-5",
-    "faceb-openai/gpt-5.1",
-    "faceb-openai/gpt-5.2",
-    "faceb-openai/gpt-5.3-chat",
-    "faceb-openai/gpt-5.4",
-    "faceb-openai/gpt-5.5",
-    "faceb-anthropic/claude-opus-4",
-    "faceb-anthropic/claude-opus-4.1",
-    "faceb-anthropic/claude-opus-4.5",
-    "faceb-anthropic/claude-opus-4.6",
-    "faceb-anthropic/claude-opus-4.7",
-    "faceb-anthropic/claude-opus-4.8",
-    "faceb-anthropic/claude-fable-5",
-    "faceb-google/gemini-3.1-pro-preview",
-    "faceb-google/gemini-3.5-flash",
-    "faceb-google/gemini-2.5-pro",
-    "faceb-google/gemini-2.5-flash",
-    "faceb-qwen/qwen3-max",
-    "faceb-qwen/qwen3-coder",
-    "faceb-qwen/qwen3-coder-plus",
-    "faceb-qwen/qwen3.5-397b-a17b",
-    "faceb-mistralai/ministral-14b-2512",
-    "faceb-mistralai/ministral-8b-2512",
-    "faceb-mistralai/ministral-3b-2512",
-    "gemini-3-1-pro",
-    "gemini-3-pro",
-    "gemini-3-flash",
-    "gemini-2.5-flash",
-    "deepseek-v4-pro",
-    "deepseek-v4-flash",
-    "deepseek-r1",
-    "grok-4",
-    "glm-5-2",
-    "qwen-3-max",
-    "qwen-3-5-397b",
-    "kimi-k2-6",
-    "deepinfra-kimi-k2",
-    "llama-3-3-70b-versatile"
-];
-const OPENCODE_CONFIG = `{
-  "$schema": "https://opencode.ai/config.json",
-  "provider": {
-    "leech-rs": {
-      "npm": "@ai-sdk/openai-compatible",
-      "name": "Leech-RS",
-      "options": {
-        "baseURL": "http://127.0.0.1:8000/v1"
-      },
-      "models": {
-${OPENCODE_MODELS.map((model) => `        "${model}": {}`).join(",\n")}
-      }
-    }
-  },
-  "model": "leech-rs/gpt-5-4"
-}`;
-const TOOL_GUIDES = [
-    {
-        name: "OpenCode",
-        protocol: "OpenAI-compatible",
-        endpoint: "http://127.0.0.1:8000/v1",
-        config: "%USERPROFILE%\\.config\\opencode\\opencode.json",
-        note: "Use the config below. Model names are referenced as leech-rs/model-id."
-    },
-    {
-        name: "Aider",
-        protocol: "OpenAI-compatible",
-        endpoint: "http://127.0.0.1:8000/v1",
-        config: "CLI flags or environment variables",
-        note: "Use an OpenAI-compatible base URL and any placeholder API key if your client requires one."
-    },
-    {
-        name: "Continue",
-        protocol: "OpenAI-compatible",
-        endpoint: "http://127.0.0.1:8000/v1",
-        config: "Continue config.json or assistant config",
-        note: "Add Leech-RS as an OpenAI-compatible provider and select any /v1/models ID."
-    },
-    {
-        name: "Cline / Roo Code",
-        protocol: "OpenAI-compatible or Anthropic-compatible",
-        endpoint: "http://127.0.0.1:8000/v1",
-        config: "Extension provider settings",
-        note: "Use OpenAI-compatible mode for /v1/chat/completions or Anthropic-compatible mode for /v1/messages."
-    },
-    {
-        name: "Claude Code",
-        protocol: "Anthropic-compatible",
-        endpoint: "http://127.0.0.1:8000/v1/messages",
-        config: "Claude Code custom Anthropic base URL setting, if supported by your installed version",
-        note: "Leech-RS exposes /v1/messages. Point Claude Code at the local base URL when its version allows overriding Anthropic's endpoint."
-    },
-    {
-        name: "Codex CLI",
-        protocol: "OpenAI-compatible",
-        endpoint: "http://127.0.0.1:8000/v1",
-        config: "Codex CLI provider/base-url setting, if supported by your installed version",
-        note: "Use the OpenAI-compatible chat completions endpoint and one of the listed model IDs."
-    }
-];
 const currency = new Intl.NumberFormat("en-US", {
-    style: "currency",
     currency: "USD",
-    maximumFractionDigits: 4
+    maximumFractionDigits: 4,
+    style: "currency"
 });
-function pricingFor(model) {
-    return MODEL_PRICING_PER_MILLION[model] ?? { input: 0.5, output: 2 };
-}
-function estimateSpend(inputTokens, outputTokens, model) {
-    const pricing = pricingFor(model);
-    return ((inputTokens / 1000000) * pricing.input) + ((outputTokens / 1000000) * pricing.output);
-}
-async function fetchJson(url) {
-    const response = await fetch(url);
-    if (!response.ok) {
-        throw new Error(`${url} failed: ${response.status}`);
-    }
-    return response.json();
-}
-function setText(id, value) {
-    const element = document.getElementById(id);
-    if (element)
-        element.textContent = value;
-}
-function clearElement(element) {
-    while (element.firstChild)
-        element.removeChild(element.firstChild);
+const state = {
+    isSending: false,
+    messages: [],
+    model: localStorage.getItem("leech-model") ?? "gpt-5-4",
+    models: [],
+    sessionId: localStorage.getItem("leech-session-id") ?? crypto.randomUUID()
+};
+localStorage.setItem("leech-session-id", state.sessionId);
+function id(prefix) {
+    return `${prefix}-${crypto.randomUUID()}`;
 }
 function escapeHtml(value) {
     return value
@@ -206,577 +78,766 @@ function escapeHtml(value) {
         .replace(/>/g, "&gt;")
         .replace(/"/g, "&quot;");
 }
-function renderToolGuideRows() {
-    return TOOL_GUIDES.map((tool) => `
-    <tr>
-      <td>${escapeHtml(tool.name)}</td>
-      <td>${escapeHtml(tool.protocol)}</td>
-      <td><code>${escapeHtml(tool.endpoint)}</code></td>
-      <td>${escapeHtml(tool.config)}</td>
-      <td>${escapeHtml(tool.note)}</td>
-    </tr>
-  `).join("");
+function formatNumber(value) {
+    return new Intl.NumberFormat("en-US").format(value);
 }
-function appendCell(row, value) {
-    const cell = document.createElement("td");
-    cell.textContent = value;
-    row.appendChild(cell);
+function pricingFor(model) {
+    return MODEL_PRICING_PER_MILLION[model] ?? { input: 0.5, output: 2 };
 }
-function renderModelTable(overview, models) {
-    const table = document.getElementById("model-table");
-    if (!table)
-        return;
-    const labels = new Map(models.data.map((model) => [model.id, model.label]));
-    const rows = Object.entries(overview.models)
-        .sort((a, b) => b[1] - a[1])
-        .map(([model, tokens]) => {
+function estimateSpend(overview) {
+    return Object.entries(overview.models).reduce((sum, [model, outputTokens]) => {
+        const pricing = pricingFor(model);
         const inputTokens = overview.model_input_tokens?.[model] ?? 0;
-        const outputTokens = overview.model_output_tokens?.[model] ?? tokens;
-        const spend = estimateSpend(inputTokens, outputTokens, model);
-        return `
-        <tr>
-          <td>${labels.get(model) ?? model}</td>
-          <td>${model}</td>
-          <td>${inputTokens.toLocaleString()}</td>
-          <td>${outputTokens.toLocaleString()}</td>
-          <td>${currency.format(spend)}</td>
-        </tr>
-      `;
+        const billedOutput = overview.model_output_tokens?.[model] ?? outputTokens;
+        return sum + (inputTokens / 1000000) * pricing.input + (billedOutput / 1000000) * pricing.output;
+    }, 0);
+}
+async function fetchJson(url) {
+    const response = await fetch(url);
+    if (!response.ok) {
+        throw new Error(`${url} returned ${response.status}`);
+    }
+    return response.json();
+}
+function setText(selector, value) {
+    const element = document.querySelector(selector);
+    if (element) {
+        element.textContent = value;
+    }
+}
+function providerSummary(pools) {
+    return pools
+        .map((pool) => {
+        const target = pool.target === null ? "" : `/${pool.target}`;
+        return `${pool.provider} ${pool.ready}${target}`;
+    })
+        .join("  ");
+}
+function renderModelOptions(models) {
+    const select = document.querySelector("#model-select");
+    if (!select)
+        return;
+    const modelList = models.length ? models : [{ id: state.model, label: state.model }];
+    select.innerHTML = modelList
+        .map((model) => {
+        const selected = model.id === state.model ? "selected" : "";
+        return `<option value="${escapeHtml(model.id)}" ${selected}>${escapeHtml(model.label ?? model.id)}</option>`;
     })
         .join("");
-    table.innerHTML = rows || `<tr><td colspan="5">No model usage yet.</td></tr>`;
-}
-function renderProxies(proxies) {
-    const list = document.getElementById("proxy-list");
-    if (!list)
-        return;
-    clearElement(list);
-    const items = proxies.proxies.length ? proxies.proxies : ["No proxies currently active."];
-    for (const proxy of items) {
-        const item = document.createElement("li");
-        item.textContent = proxy;
-        list.appendChild(item);
+    if (!modelList.some((model) => model.id === state.model)) {
+        state.model = modelList[0]?.id ?? "gpt-5-4";
+        localStorage.setItem("leech-model", state.model);
     }
+    setText("#composer-model", state.model);
 }
-function renderProxyAssignments(proxies) {
-    const table = document.getElementById("provider-proxy-table");
-    if (!table)
+function renderMessages() {
+    const conversation = document.querySelector("#conversation");
+    if (!conversation)
         return;
-    clearElement(table);
-    const entries = Object.entries(proxies.provider_assignments ?? {});
-    if (!entries.length) {
-        const row = document.createElement("tr");
-        const cell = document.createElement("td");
-        cell.colSpan = 3;
-        cell.textContent = "No provider proxy assignments yet.";
-        row.appendChild(cell);
-        table.appendChild(row);
+    if (state.messages.length === 0) {
+        conversation.innerHTML = `
+      <section class="empty-state">
+        <div class="mark">L</div>
+        <h1>Leech Chat</h1>
+        <div class="suggestions">
+          <button class="suggestion" type="button" data-prompt="Give me a quick provider health summary.">Provider health</button>
+          <button class="suggestion" type="button" data-prompt="Which model should I use for fast coding tasks?">Pick a model</button>
+          <button class="suggestion" type="button" data-prompt="Summarize recent gateway usage.">Usage summary</button>
+        </div>
+      </section>
+    `;
         return;
     }
-    for (const [provider, providerProxies] of entries) {
-        const row = document.createElement("tr");
-        appendCell(row, provider);
-        appendCell(row, String(providerProxies.length));
-        appendCell(row, providerProxies.join(", ") || "direct");
-        table.appendChild(row);
+    conversation.innerHTML = state.messages
+        .map((message) => `
+      <article class="message ${message.role}" data-message-id="${message.id}">
+        <div class="avatar">${message.role === "user" ? "You" : "L"}</div>
+        <div class="bubble">${formatMessage(message.content)}</div>
+      </article>
+    `)
+        .join("");
+    conversation.scrollTop = conversation.scrollHeight;
+}
+function formatMessage(content) {
+    const escaped = escapeHtml(content.trim() || "...");
+    return escaped
+        .split(/\n{2,}/)
+        .map((paragraph) => `<p>${paragraph.replace(/\n/g, "<br>")}</p>`)
+        .join("");
+}
+function setSending(isSending) {
+    state.isSending = isSending;
+    const send = document.querySelector("#send-button");
+    const prompt = document.querySelector("#prompt");
+    if (send) {
+        send.disabled = isSending;
+        send.textContent = isSending ? "Sending" : "Send";
+    }
+    if (prompt) {
+        prompt.disabled = isSending;
     }
 }
-function renderDailyUsage(overview) {
-    const list = document.getElementById("daily-usage");
-    if (!list)
+function requestMessages() {
+    return state.messages.map((message) => ({
+        content: message.content,
+        role: message.role
+    }));
+}
+async function sendMessage(content) {
+    if (state.isSending)
         return;
-    const entries = Object.entries(overview.daily)
-        .sort(([a], [b]) => a.localeCompare(b))
-        .slice(-7);
-    list.innerHTML = entries.length
-        ? entries
-            .map(([day, tokens]) => `<li><strong>${day}</strong><span>${tokens.toLocaleString()} tokens</span></li>`)
-            .join("")
-        : "<li>No daily usage yet.</li>";
-}
-function renderProviderPools(pools) {
-    const table = document.getElementById("provider-pool-table");
-    if (!table)
+    const text = content.trim();
+    if (!text)
         return;
-    clearElement(table);
-    if (!pools.length) {
-        const row = document.createElement("tr");
-        const cell = document.createElement("td");
-        cell.colSpan = 6;
-        cell.textContent = "No provider pool stats yet.";
-        row.appendChild(cell);
-        table.appendChild(row);
-        return;
-    }
-    for (const pool of pools) {
-        const row = document.createElement("tr");
-        appendCell(row, pool.provider);
-        appendCell(row, `${pool.ready}${pool.target === null ? "" : ` / ${pool.target}`}`);
-        appendCell(row, String(pool.generated ?? "n/a"));
-        appendCell(row, String(pool.failed ?? "n/a"));
-        appendCell(row, String(pool.dead ?? "n/a"));
-        appendCell(row, String(pool.cooling ?? "n/a"));
-        table.appendChild(row);
-    }
-}
-function providerPool(pools, provider) {
-    return pools.find((pool) => pool.provider === provider);
-}
-function providerProxyCount(proxies, provider) {
-    return (proxies.provider_assignments?.[provider] ?? []).length;
-}
-function setProviderCardValues(health, proxies) {
-    const useAi = providerPool(health.provider_pools ?? [], "use_ai");
-    const sakana = providerPool(health.provider_pools ?? [], "sakana");
-    const faceb = providerPool(health.provider_pools ?? [], "faceb");
-    setText("use-ai-ready", `${useAi?.ready ?? 0}${useAi?.target === null || useAi?.target === undefined ? "" : ` / ${useAi.target}`}`);
-    setText("use-ai-proxies", String(providerProxyCount(proxies, "use_ai")));
-    setText("use-ai-mode", "Tor isolated");
-    setText("use-ai-status", useAi && useAi.ready > 0 ? "Ready" : "Warming");
-    setText("sakana-ready", String(sakana?.ready ?? 0));
-    setText("sakana-cooling", String(sakana?.cooling ?? 0));
-    setText("sakana-mode", "Direct egress");
-    setText("sakana-status", (sakana?.ready ?? 0) > 0 ? "Session cached" : "Lazy");
-    setText("faceb-ready", `${faceb?.ready ?? 0}${faceb?.target === null || faceb?.target === undefined ? "" : ` / ${faceb.target}`}`);
-    setText("faceb-generated", String(faceb?.generated ?? 0));
-    setText("faceb-dead", String(faceb?.dead ?? 0));
-    setText("faceb-proxies", String(providerProxyCount(proxies, "faceb")));
-}
-async function loadDashboard() {
+    state.messages.push({ content: text, id: id("user"), role: "user" });
+    const assistantId = id("assistant");
+    renderMessages();
+    setSending(true);
     try {
-        const [health, bank, proxies, overview, models] = await Promise.all([
+        const response = await fetch("/v1/chat/completions", {
+            body: JSON.stringify({
+                messages: requestMessages(),
+                model: state.model,
+                stream: false,
+                user: state.sessionId
+            }),
+            headers: { "content-type": "application/json" },
+            method: "POST"
+        });
+        const payload = await response.json();
+        if (!response.ok || payload.error) {
+            throw new Error(payload.error ?? `Request failed with ${response.status}`);
+        }
+        const reply = payload.choices?.[0]?.message?.content;
+        const toolCalls = payload.choices?.[0]?.message?.tool_calls;
+        state.messages.push({
+            content: reply ?? (toolCalls ? JSON.stringify(toolCalls, null, 2) : "No response content."),
+            id: assistantId,
+            role: "assistant"
+        });
+    }
+    catch (error) {
+        state.messages.push({
+            content: error instanceof Error ? error.message : String(error),
+            id: assistantId,
+            role: "assistant"
+        });
+    }
+    finally {
+        setSending(false);
+        renderMessages();
+        void refreshStatus();
+    }
+}
+function resizeComposer() {
+    const prompt = document.querySelector("#prompt");
+    if (!prompt)
+        return;
+    prompt.style.height = "auto";
+    prompt.style.height = `${Math.min(prompt.scrollHeight, 220)}px`;
+}
+async function refreshStatus() {
+    try {
+        const [health, proxies, usage, models] = await Promise.all([
             fetchJson("/health"),
-            fetchJson("/bank"),
             fetchJson("/proxies"),
             fetchJson("/usage/overview"),
             fetchJson("/v1/models")
         ]);
-        const totalSpend = Object.entries(overview.models).reduce((sum, [model, tokens]) => sum + estimateSpend(overview.model_input_tokens?.[model] ?? 0, overview.model_output_tokens?.[model] ?? tokens, model), 0);
-        setText("server-status", health.status.toUpperCase());
-        setText("pool-count", String(bank.warm_accounts));
-        setText("pool-target", String(bank.pool_target));
-        setText("tor-count", String(proxies.proxy_count));
-        setText("request-rate", `${proxies.load.requests_per_minute.toFixed(2)} req/min`);
-        setText("session-count", String(overview.sessions));
-        setText("message-count", String(overview.messages));
-        setText("token-total", overview.total_tokens.toLocaleString());
-        setText("estimated-spend", currency.format(totalSpend));
-        setText("favorite-model", overview.favorite_model ?? "n/a");
-        setText("streak", `${overview.current_streak} day(s)`);
-        setText("peak-hour", overview.peak_hour ?? "n/a");
-        setText("reasons", health.reasons.join(", "));
-        setProviderCardValues(health, proxies);
-        renderModelTable(overview, models);
-        renderProxies(proxies);
-        renderProxyAssignments(proxies);
-        renderDailyUsage(overview);
-        renderProviderPools(health.provider_pools ?? []);
+        state.models = models.data;
+        renderModelOptions(models.data);
+        setText("#status-pill", health.status.toUpperCase());
+        setText("#health-line", providerSummary(health.provider_pools ?? []) || "No provider stats yet");
+        setText("#proxy-count", String(proxies.proxy_count));
+        setText("#rpm", proxies.load.requests_per_minute.toFixed(2));
+        setText("#usage-spend", currency.format(estimateSpend(usage)));
+        setText("#usage-tokens", formatNumber(usage.total_tokens));
+        setText("#usage-sessions", formatNumber(usage.sessions));
+        setText("#favorite-model", usage.favorite_model ?? "n/a");
+        renderProviderList(health.provider_pools ?? [], proxies.provider_assignments ?? {});
     }
     catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        setText("server-status", "ERROR");
-        setText("reasons", message);
+        setText("#status-pill", "OFFLINE");
+        setText("#health-line", error instanceof Error ? error.message : String(error));
     }
+}
+function renderProviderList(pools, assignments) {
+    const list = document.querySelector("#provider-list");
+    if (!list)
+        return;
+    if (!pools.length) {
+        list.innerHTML = `<li><span>No providers</span><strong>0</strong></li>`;
+        return;
+    }
+    list.innerHTML = pools
+        .map((pool) => {
+        const target = pool.target === null ? "" : ` / ${pool.target}`;
+        const proxyCount = assignments[pool.provider]?.length ?? 0;
+        return `
+        <li>
+          <span>${escapeHtml(pool.provider)}</span>
+          <strong>${pool.ready}${target}</strong>
+          <small>${proxyCount} proxy routes</small>
+        </li>
+      `;
+    })
+        .join("");
+}
+function newChat() {
+    state.messages = [];
+    state.sessionId = crypto.randomUUID();
+    localStorage.setItem("leech-session-id", state.sessionId);
+    renderMessages();
+}
+function attachEvents() {
+    const form = document.querySelector("#chat-form");
+    const prompt = document.querySelector("#prompt");
+    const select = document.querySelector("#model-select");
+    const newChatButton = document.querySelector("#new-chat");
+    const refreshButton = document.querySelector("#refresh-status");
+    form?.addEventListener("submit", (event) => {
+        event.preventDefault();
+        if (!prompt)
+            return;
+        const value = prompt.value;
+        prompt.value = "";
+        resizeComposer();
+        void sendMessage(value);
+    });
+    prompt?.addEventListener("input", resizeComposer);
+    prompt?.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" && !event.shiftKey) {
+            event.preventDefault();
+            form?.requestSubmit();
+        }
+    });
+    select?.addEventListener("change", () => {
+        state.model = select.value;
+        localStorage.setItem("leech-model", state.model);
+        setText("#composer-model", state.model);
+    });
+    newChatButton?.addEventListener("click", newChat);
+    refreshButton?.addEventListener("click", () => { void refreshStatus(); });
+    document.body.addEventListener("click", (event) => {
+        const button = event.target.closest("[data-prompt]");
+        if (!button || !prompt)
+            return;
+        prompt.value = button.dataset.prompt ?? "";
+        resizeComposer();
+        prompt.focus();
+    });
 }
 function renderShell() {
     document.body.innerHTML = `
-    <main class="shell">
-      <section class="hero">
-        <div>
-          <p class="eyebrow">Leech-RS Dashboard</p>
-          <h1>Proxy Operations</h1>
-          <p class="sub">A quick view of estimated spend, account pool health, Tor capacity, and request flow.</p>
+    <div class="app">
+      <aside class="rail">
+        <div class="brand">
+          <div class="brand-mark">L</div>
+          <div>
+            <strong>Leech-RS</strong>
+            <span id="status-pill">Loading</span>
+          </div>
         </div>
-        <div class="status-pill">
-          <span>Server</span>
-          <strong id="server-status">Loading...</strong>
-        </div>
-      </section>
 
-      <section class="grid cards">
-        <article class="card"><span class="label">Estimated Spend</span><strong id="estimated-spend">$0.0000</strong><small>Total estimated cost across all models</small></article>
-        <article class="card"><span class="label">Tor Instances</span><strong id="tor-count">0</strong><small>Active proxies under management</small></article>
-        <article class="card"><span class="label">Request Rate</span><strong id="request-rate">0.00 req/min</strong><small>Model endpoint request load</small></article>
-        <article class="card"><span class="label">Favorite Model</span><strong id="favorite-model">n/a</strong><small>Most-used model by output tokens</small></article>
-      </section>
+        <button id="new-chat" class="primary-action" type="button">New chat</button>
 
-      <section class="provider-section">
-        <div class="section-head"><h2>use.ai</h2><span>Primary account pool</span></div>
-        <div class="grid provider-cards">
-          <article class="card"><span class="label">Warm Accounts</span><strong id="use-ai-ready">0</strong><small>Ready accounts vs target</small></article>
-          <article class="card"><span class="label">Proxy Count</span><strong id="use-ai-proxies">0</strong><small>Active use.ai Tor routes</small></article>
-          <article class="card"><span class="label">Mode</span><strong id="use-ai-mode">Tor isolated</strong><small>Uses provider-specific Tor range</small></article>
-          <article class="card"><span class="label">Status</span><strong id="use-ai-status">Loading</strong><small>Account pool availability</small></article>
-        </div>
-      </section>
+        <section class="rail-section">
+          <label for="model-select">Model</label>
+          <select id="model-select">
+            <option value="${escapeHtml(state.model)}">${escapeHtml(state.model)}</option>
+          </select>
+        </section>
 
-      <section class="provider-section">
-        <div class="section-head"><h2>Sakana</h2><span>Direct egress provider</span></div>
-        <div class="grid provider-cards">
-          <article class="card"><span class="label">Ready Sessions</span><strong id="sakana-ready">0</strong><small>Cached anonymous sessions</small></article>
-          <article class="card"><span class="label">Cooling</span><strong id="sakana-cooling">0</strong><small>Backed-off sessions</small></article>
-          <article class="card"><span class="label">Mode</span><strong id="sakana-mode">Direct egress</strong><small>No Tor for Firebase signup</small></article>
-          <article class="card"><span class="label">Status</span><strong id="sakana-status">Loading</strong><small>Lazy session pool</small></article>
-        </div>
-      </section>
+        <section class="rail-section status-block">
+          <div>
+            <span>Spend</span>
+            <strong id="usage-spend">$0.0000</strong>
+          </div>
+          <div>
+            <span>Tokens</span>
+            <strong id="usage-tokens">0</strong>
+          </div>
+          <div>
+            <span>Sessions</span>
+            <strong id="usage-sessions">0</strong>
+          </div>
+        </section>
 
-      <section class="provider-section">
-        <div class="section-head"><h2>Faceb</h2><span>API key pool</span></div>
-        <div class="grid provider-cards">
-          <article class="card"><span class="label">Ready Keys</span><strong id="faceb-ready">0</strong><small>Buffered keys vs max</small></article>
-          <article class="card"><span class="label">Generated</span><strong id="faceb-generated">0</strong><small>Keys created this runtime</small></article>
-          <article class="card"><span class="label">Dead Keys</span><strong id="faceb-dead">0</strong><small>Exhausted or rejected keys</small></article>
-          <article class="card"><span class="label">Proxy Count</span><strong id="faceb-proxies">0</strong><small>Active Faceb Tor routes</small></article>
-        </div>
-      </section>
+        <section class="rail-section split-stats">
+          <div>
+            <span>Proxies</span>
+            <strong id="proxy-count">0</strong>
+          </div>
+          <div>
+            <span>Req/min</span>
+            <strong id="rpm">0.00</strong>
+          </div>
+        </section>
 
-      <section class="provider-section">
-        <div class="section-head"><h2>Usage Metrics</h2><span>Spend and activity</span></div>
-        <div class="grid provider-cards">
-          <article class="card"><span class="label">Sessions</span><strong id="session-count">0</strong><small>Total tracked sessions</small></article>
-          <article class="card"><span class="label">Messages</span><strong id="message-count">0</strong><small>Total tracked completions</small></article>
-          <article class="card"><span class="label">Tokens</span><strong id="token-total">0</strong><small>Total estimated tokens</small></article>
-          <article class="card"><span class="label">Warm Accounts</span><strong><span id="pool-count">0</span> / <span id="pool-target">0</span></strong><small>Legacy use.ai pool view</small></article>
-        </div>
-      </section>
+        <section class="rail-section">
+          <div class="rail-heading">
+            <span>Providers</span>
+            <button id="refresh-status" type="button">Refresh</button>
+          </div>
+          <ul id="provider-list" class="provider-list"></ul>
+        </section>
+      </aside>
 
-      <section class="grid panels">
-        <article class="panel">
-          <div class="panel-head">
-            <h2>Spend By Model</h2>
-            <span id="streak">0 day(s)</span>
+      <main class="workspace">
+        <header class="topbar">
+          <div>
+            <span class="thread-label">Gateway chat</span>
+            <strong id="favorite-model">n/a</strong>
           </div>
-          <table>
-            <thead>
-              <tr><th>Label</th><th>Model</th><th>Input</th><th>Output</th><th>Estimated Spend</th></tr>
-            </thead>
-            <tbody id="model-table"></tbody>
-          </table>
-        </article>
-        <article class="panel">
-          <div class="panel-head">
-            <h2>Tor Proxies</h2>
-            <span id="peak-hour">n/a</span>
+          <p id="health-line">Loading provider status</p>
+        </header>
+
+        <section id="conversation" class="conversation"></section>
+
+        <form id="chat-form" class="composer">
+          <textarea id="prompt" rows="1" placeholder="Message Leech-RS"></textarea>
+          <div class="composer-actions">
+            <span id="composer-model">${escapeHtml(state.model)}</span>
+            <button id="send-button" type="submit">Send</button>
           </div>
-          <ul id="proxy-list" class="stack"></ul>
-        </article>
-        <article class="panel">
-          <div class="panel-head">
-            <h2>Provider Pools</h2>
-            <span>Live credentials</span>
-          </div>
-          <table>
-            <thead>
-              <tr><th>Provider</th><th>Ready</th><th>Generated</th><th>Failed</th><th>Dead</th><th>Cooling</th></tr>
-            </thead>
-            <tbody id="provider-pool-table"></tbody>
-          </table>
-        </article>
-        <article class="panel">
-          <div class="panel-head">
-            <h2>Provider Proxies</h2>
-            <span>Active routing</span>
-          </div>
-          <table>
-            <thead>
-              <tr><th>Provider</th><th>Count</th><th>Proxies</th></tr>
-            </thead>
-            <tbody id="provider-proxy-table"></tbody>
-          </table>
-        </article>
-        <article class="panel">
-          <div class="panel-head">
-            <h2>Daily Usage</h2>
-            <span>Last 7 active days</span>
-          </div>
-          <ul id="daily-usage" class="stack"></ul>
-        </article>
-        <article class="panel">
-          <div class="panel-head">
-            <h2>Health Notes</h2>
-            <span>Live status</span>
-          </div>
-          <p id="reasons" class="notes">Loading...</p>
-        </article>
-        <article class="panel guide-panel full-width">
-          <div class="panel-head">
-            <h2>Use Guides</h2>
-            <span>Quick starts</span>
-          </div>
-          <ul class="stack guide-summary-grid">
-            <li><strong>Base URL</strong><span>http://host:8000/v1</span></li>
-            <li><strong>use.ai</strong><span>Use models like gpt-5-4 or claude-sonnet-4-6.</span></li>
-            <li><strong>Sakana</strong><span>Use sakana-namazu, sakana-fugu, or sakana-fugu-ultra. Runs direct egress.</span></li>
-            <li><strong>Faceb</strong><span>Use faceb-provider/model IDs like faceb-google/gemini-2.5-flash.</span></li>
-            <li><strong>OpenCode config path</strong><span>%USERPROFILE%\\.config\\opencode\\opencode.json</span></li>
-            <li><strong>Anthropic endpoint</strong><span>http://127.0.0.1:8000/v1/messages</span></li>
-            <li><strong>OpenAI endpoint</strong><span>http://127.0.0.1:8000/v1/chat/completions</span></li>
-            <li><strong>Smoke</strong><span>Run .\\smoke.ps1 -SkipProviderSmokes for core-only checks.</span></li>
-          </ul>
-          <div class="config-guide">
-            <div class="panel-head compact">
-              <h3>Coding Tools</h3>
-              <span>Client setup targets</span>
-            </div>
-            <table class="tool-guide-table">
-              <thead>
-                <tr><th>Tool</th><th>Protocol</th><th>Endpoint</th><th>Config</th><th>Note</th></tr>
-              </thead>
-              <tbody>${renderToolGuideRows()}</tbody>
-            </table>
-          </div>
-          <div class="config-guide">
-            <div class="panel-head compact">
-              <h3>OpenCode Config</h3>
-              <span>All exposed models</span>
-            </div>
-            <p class="notes">Place this at <code>%USERPROFILE%\\.config\\opencode\\opencode.json</code>. Use <code>http://127.0.0.1:8000/v1</code> when OpenCode runs on the same machine as Leech-RS.</p>
-            <pre><code>${escapeHtml(OPENCODE_CONFIG)}</code></pre>
-          </div>
-        </article>
-      </section>
-    </main>
+        </form>
+      </main>
+    </div>
   `;
 }
 function injectStyles() {
     const style = document.createElement("style");
     style.textContent = `
     :root {
-      color-scheme: dark;
-      --bg: #0f1117;
-      --paper: #181b24;
-      --paper-soft: #202431;
-      --ink: #e8edf5;
-      --muted: #9aa3b2;
-      --accent: #d38b5d;
-      --accent-strong: #f0a66d;
-      --line: rgba(232, 237, 245, 0.11);
-      --shadow: 0 18px 44px rgba(0, 0, 0, 0.34);
+      color-scheme: light;
+      --bg: #f5f7f2;
+      --surface: #ffffff;
+      --surface-alt: #edf1ea;
+      --ink: #202522;
+      --muted: #68726a;
+      --line: #d8ded4;
+      --line-strong: #b8c2b5;
+      --accent: #bd5b4b;
+      --accent-dark: #893c33;
+      --accent-soft: #f4ddd8;
+      --green: #41695a;
+      --shadow: 0 18px 42px rgba(31, 39, 33, 0.1);
     }
-    * { box-sizing: border-box; }
+
+    * {
+      box-sizing: border-box;
+    }
+
     body {
       margin: 0;
-      font-family: Georgia, "Iowan Old Style", "Palatino Linotype", serif;
-      background:
-        radial-gradient(circle at 18% -10%, rgba(211,139,93,0.16), transparent 34%),
-        radial-gradient(circle at 96% 4%, rgba(82,104,148,0.18), transparent 30%),
-        linear-gradient(180deg, #141720 0%, var(--bg) 100%);
+      background: var(--bg);
       color: var(--ink);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      letter-spacing: 0;
     }
-    .shell {
-      max-width: 1280px;
-      margin: 0 auto;
-      padding: 32px 20px 48px;
+
+    button,
+    select,
+    textarea {
+      font: inherit;
+      letter-spacing: 0;
     }
-    .hero, .grid { display: grid; gap: 18px; }
-    .hero {
-      grid-template-columns: 1.6fr 0.8fr;
-      align-items: end;
-      margin-bottom: 22px;
+
+    button {
+      cursor: pointer;
     }
-    .eyebrow {
-      text-transform: uppercase;
-      letter-spacing: 0.22em;
-      font-size: 0.74rem;
-      color: var(--accent);
-      margin: 0 0 10px;
+
+    .app {
+      display: grid;
+      grid-template-columns: 292px minmax(0, 1fr);
+      min-height: 100vh;
     }
-    h1 {
-      margin: 0;
-      font-size: clamp(2.3rem, 5vw, 4.3rem);
-      line-height: 0.95;
-    }
-    .sub {
-      margin: 12px 0 0;
-      max-width: 58ch;
-      color: var(--muted);
-      font-size: 1rem;
-    }
-    .status-pill, .card, .panel {
-      background: linear-gradient(180deg, rgba(32,36,49,0.96), rgba(24,27,36,0.96));
-      border: 1px solid var(--line);
-      border-radius: 20px;
-      box-shadow: var(--shadow);
-    }
-    .status-pill {
-      background: linear-gradient(135deg, rgba(45,37,32,0.98), rgba(24,27,36,0.98));
-    }
-    .status-pill {
-      padding: 18px 20px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 12px;
-    }
-    .cards {
-      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-      margin-bottom: 20px;
-    }
-    .card {
-      padding: 18px;
-      min-height: 135px;
+
+    .rail {
       display: flex;
       flex-direction: column;
-      justify-content: space-between;
-    }
-    .label {
-      color: var(--muted);
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      font-size: 0.74rem;
-    }
-    strong {
-      font-size: 1.8rem;
-      line-height: 1;
-    }
-    small {
-      color: var(--muted);
-      font-size: 0.88rem;
-    }
-    .provider-section {
-      margin-bottom: 20px;
-    }
-    .section-head {
-      display: flex;
-      align-items: baseline;
-      justify-content: space-between;
-      gap: 12px;
-      margin: 0 2px 12px;
-    }
-    .section-head span {
-      color: var(--muted);
-      font-size: 0.92rem;
-    }
-    .provider-cards {
-      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
-    }
-    .panels {
-      grid-template-columns: 1.5fr 1fr;
-      align-items: start;
-    }
-    .full-width {
-      grid-column: 1 / -1;
-    }
-    .panel {
+      gap: 16px;
+      min-height: 100vh;
       padding: 18px;
+      border-right: 1px solid var(--line);
+      background: #fbfcfa;
     }
-    .panel-head {
+
+    .brand {
       display: flex;
-      justify-content: space-between;
-      align-items: baseline;
-      gap: 12px;
-      margin-bottom: 14px;
+      align-items: center;
+      gap: 10px;
+      min-height: 44px;
     }
-    h2 {
-      margin: 0;
-      font-size: 1.1rem;
+
+    .brand-mark,
+    .avatar,
+    .mark {
+      display: grid;
+      place-items: center;
+      border: 1px solid var(--line-strong);
+      background: var(--surface-alt);
+      color: var(--green);
+      font-weight: 700;
     }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 0.94rem;
+
+    .brand-mark {
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
     }
-    code, pre {
-      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+
+    .brand strong {
+      display: block;
+      font-size: 1rem;
+      line-height: 1.1;
     }
-    code {
-      font-size: 0.86em;
-      background: rgba(211,139,93,0.12);
+
+    .brand span {
+      color: var(--muted);
+      display: block;
+      font-size: 0.82rem;
+      margin-top: 3px;
+    }
+
+    .primary-action,
+    #send-button {
+      border: 0;
+      border-radius: 8px;
+      background: var(--accent);
+      color: #fff;
+      font-weight: 700;
+      min-height: 42px;
+      padding: 0 16px;
+    }
+
+    .primary-action:hover,
+    #send-button:hover {
+      background: var(--accent-dark);
+    }
+
+    #send-button:disabled {
+      cursor: wait;
+      opacity: 0.62;
+    }
+
+    .rail-section {
       border: 1px solid var(--line);
       border-radius: 8px;
-      padding: 2px 5px;
-      color: #ffd8bd;
+      background: var(--surface);
+      padding: 12px;
     }
-    pre {
-      max-height: 420px;
-      overflow: auto;
-      white-space: pre;
-      background: #0b0d12;
-      color: #e8edf5;
-      border: 1px solid rgba(211,139,93,0.2);
-      border-radius: 14px;
-      padding: 14px;
-      font-size: 0.82rem;
-      line-height: 1.45;
-    }
-    pre code {
-      background: transparent;
-      border: 0;
-      color: inherit;
-      padding: 0;
-      font-size: inherit;
-    }
-    th, td {
-      text-align: left;
-      padding: 10px 8px;
-      border-bottom: 1px solid var(--line);
-      vertical-align: top;
-    }
-    th {
+
+    .rail-section label,
+    .rail-section span,
+    .thread-label,
+    .provider-list small,
+    .composer-actions span {
       color: var(--muted);
-      font-weight: 600;
-      font-size: 0.8rem;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
+      font-size: 0.82rem;
     }
-    .stack {
-      list-style: none;
-      padding: 0;
-      margin: 0;
+
+    select {
+      width: 100%;
+      min-height: 38px;
+      margin-top: 8px;
+      border: 1px solid var(--line-strong);
+      border-radius: 8px;
+      background: #fff;
+      color: var(--ink);
+      padding: 0 10px;
+    }
+
+    .status-block,
+    .split-stats {
       display: grid;
       gap: 10px;
     }
-    .stack li {
+
+    .split-stats {
+      grid-template-columns: 1fr 1fr;
+    }
+
+    .status-block div,
+    .split-stats div {
+      display: grid;
+      gap: 3px;
+    }
+
+    .status-block strong,
+    .split-stats strong {
+      font-size: 1.08rem;
+    }
+
+    .rail-heading {
       display: flex;
+      align-items: center;
       justify-content: space-between;
-      gap: 12px;
-      padding: 10px 12px;
-      background: rgba(32,36,49,0.74);
-      border: 1px solid var(--line);
-      border-radius: 14px;
-      font-size: 0.92rem;
-    }
-    .notes {
-      margin: 0;
-      color: var(--muted);
-      line-height: 1.6;
-    }
-    .config-guide {
-      margin-top: 18px;
-      padding-top: 16px;
-      border-top: 1px solid var(--line);
-    }
-    .guide-summary-grid {
-      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-    }
-    .guide-summary-grid li {
-      align-items: flex-start;
-      min-height: 78px;
-    }
-    .guide-summary-grid li span {
-      text-align: right;
-      overflow-wrap: anywhere;
-    }
-    .panel-head.compact {
+      gap: 10px;
       margin-bottom: 10px;
     }
-    .panel-head h3 {
+
+    .rail-heading button,
+    .suggestion {
+      border: 1px solid var(--line-strong);
+      border-radius: 8px;
+      background: #fff;
+      color: var(--ink);
+      min-height: 32px;
+      padding: 0 10px;
+    }
+
+    .rail-heading button:hover,
+    .suggestion:hover {
+      border-color: var(--accent);
+      color: var(--accent-dark);
+    }
+
+    .provider-list {
+      display: grid;
+      gap: 8px;
+      list-style: none;
       margin: 0;
-      font-size: 1rem;
+      padding: 0;
     }
-    .tool-guide-table {
+
+    .provider-list li {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 2px 10px;
+      padding: 9px;
+      border-radius: 8px;
+      background: var(--surface-alt);
+    }
+
+    .provider-list small {
+      grid-column: 1 / -1;
+    }
+
+    .workspace {
+      display: grid;
+      grid-template-rows: auto 1fr auto;
       min-width: 0;
+      min-height: 100vh;
     }
-    .guide-panel {
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      min-height: 70px;
+      padding: 14px 28px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(245, 247, 242, 0.88);
+      backdrop-filter: blur(12px);
+    }
+
+    .topbar strong {
+      display: block;
+      margin-top: 3px;
+    }
+
+    .topbar p {
+      color: var(--muted);
+      margin: 0;
+      max-width: 54ch;
+      overflow: hidden;
+      text-align: right;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .conversation {
       overflow: auto;
+      padding: 32px 28px 24px;
     }
-    @media (max-width: 900px) {
-      .hero, .panels { grid-template-columns: 1fr; }
+
+    .empty-state {
+      align-content: center;
+      display: grid;
+      gap: 22px;
+      justify-items: center;
+      min-height: 58vh;
+      text-align: center;
+    }
+
+    .mark {
+      width: 54px;
+      height: 54px;
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+      font-size: 1.35rem;
+    }
+
+    .empty-state h1 {
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: 2.65rem;
+      font-weight: 500;
+      line-height: 1;
+      margin: 0;
+    }
+
+    .suggestions {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 10px;
+      max-width: 760px;
+    }
+
+    .message {
+      display: grid;
+      grid-template-columns: 46px minmax(0, 760px);
+      gap: 14px;
+      margin: 0 auto 22px;
+      max-width: 900px;
+    }
+
+    .message.user {
+      grid-template-columns: minmax(0, 760px) 46px;
+      justify-content: end;
+    }
+
+    .message.user .avatar {
+      grid-column: 2;
+      grid-row: 1;
+    }
+
+    .message.user .bubble {
+      grid-column: 1;
+      grid-row: 1;
+      background: var(--accent-soft);
+      border-color: #e8bbb2;
+    }
+
+    .avatar {
+      width: 40px;
+      height: 40px;
+      border-radius: 8px;
+      font-size: 0.78rem;
+    }
+
+    .bubble {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+      box-shadow: var(--shadow);
+      line-height: 1.62;
+      padding: 16px 18px;
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
+
+    .bubble p {
+      margin: 0 0 12px;
+    }
+
+    .bubble p:last-child {
+      margin-bottom: 0;
+    }
+
+    .composer {
+      display: grid;
+      gap: 10px;
+      width: min(900px, calc(100% - 56px));
+      margin: 0 auto 24px;
+      border: 1px solid var(--line-strong);
+      border-radius: 8px;
+      background: var(--surface);
+      box-shadow: var(--shadow);
+      padding: 12px;
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 46px;
+      max-height: 220px;
+      resize: none;
+      border: 0;
+      outline: 0;
+      background: transparent;
+      color: var(--ink);
+      line-height: 1.5;
+      padding: 6px;
+    }
+
+    textarea::placeholder {
+      color: #7d867e;
+    }
+
+    .composer-actions {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      min-height: 42px;
+    }
+
+    .composer-actions span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    @media (max-width: 920px) {
+      .app {
+        grid-template-columns: 1fr;
+      }
+
+      .rail {
+        min-height: auto;
+        border-right: 0;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .workspace {
+        min-height: calc(100vh - 360px);
+      }
+
+      .topbar {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .topbar p {
+        max-width: 100%;
+        text-align: left;
+      }
+
+      .conversation {
+        padding: 26px 16px 20px;
+      }
+
+      .message,
+      .message.user {
+        grid-template-columns: 38px minmax(0, 1fr);
+      }
+
+      .message.user .avatar {
+        grid-column: 1;
+      }
+
+      .message.user .bubble {
+        grid-column: 2;
+      }
+
+      .avatar {
+        width: 34px;
+        height: 34px;
+      }
+
+      .composer {
+        width: calc(100% - 28px);
+        margin-bottom: 14px;
+      }
     }
   `;
     document.head.appendChild(style);
 }
 injectStyles();
 renderShell();
-loadDashboard();
-setInterval(() => { void loadDashboard(); }, 15000);
+attachEvents();
+renderMessages();
+void refreshStatus();
+setInterval(() => { void refreshStatus(); }, 15000);
