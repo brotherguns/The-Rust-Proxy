@@ -6,6 +6,8 @@ type ChatMessage = {
   content: string;
 };
 
+type AppView = "chat" | "dashboard";
+
 type ProviderPool = {
   provider: string;
   ready: number;
@@ -24,6 +26,13 @@ type Health = {
   provider_pools: ProviderPool[];
   reasons: string[];
   send_success_rate: number;
+};
+
+type Bank = {
+  mode: string;
+  warm_accounts: number;
+  pool_target: number;
+  status: string;
 };
 
 type Proxies = {
@@ -138,7 +147,8 @@ const state = {
   messages: [] as ChatMessage[],
   model: localStorage.getItem("leech-model") ?? "gpt-5-4",
   models: [] as ModelList["data"],
-  sessionId: localStorage.getItem("leech-session-id") ?? crypto.randomUUID()
+  sessionId: localStorage.getItem("leech-session-id") ?? crypto.randomUUID(),
+  view: (localStorage.getItem("leech-view") === "dashboard" ? "dashboard" : "chat") as AppView
 };
 
 localStorage.setItem("leech-session-id", state.sessionId);
@@ -172,6 +182,11 @@ function estimateSpend(overview: UsageOverview): number {
   }, 0);
 }
 
+function estimateModelSpend(inputTokens: number, outputTokens: number, model: string): number {
+  const pricing = pricingFor(model);
+  return (inputTokens / 1_000_000) * pricing.input + (outputTokens / 1_000_000) * pricing.output;
+}
+
 async function fetchJson<T>(url: string): Promise<T> {
   const response = await fetch(url);
   if (!response.ok) {
@@ -185,6 +200,18 @@ function setText(selector: string, value: string): void {
   if (element) {
     element.textContent = value;
   }
+}
+
+function clearElement(element: HTMLElement): void {
+  while (element.firstChild) {
+    element.removeChild(element.firstChild);
+  }
+}
+
+function appendCell(row: HTMLTableRowElement, value: string): void {
+  const cell = document.createElement("td");
+  cell.textContent = value;
+  row.appendChild(cell);
 }
 
 function providerSummary(pools: ProviderPool[]): string {
@@ -216,7 +243,7 @@ function renderModelOptions(models: ModelList["data"]): void {
 }
 
 function renderMessages(): void {
-  const conversation = document.querySelector<HTMLElement>("#conversation");
+  const conversation = document.querySelector<HTMLElement>("#chat-view");
   if (!conversation) return;
 
   if (state.messages.length === 0) {
@@ -330,8 +357,9 @@ function resizeComposer(): void {
 
 async function refreshStatus(): Promise<void> {
   try {
-    const [health, proxies, usage, models] = await Promise.all([
+    const [health, bank, proxies, usage, models] = await Promise.all([
       fetchJson<Health>("/health"),
+      fetchJson<Bank>("/bank"),
       fetchJson<Proxies>("/proxies"),
       fetchJson<UsageOverview>("/usage/overview"),
       fetchJson<ModelList>("/v1/models")
@@ -341,17 +369,13 @@ async function refreshStatus(): Promise<void> {
     renderModelOptions(models.data);
     setText("#status-pill", health.status.toUpperCase());
     setText("#health-line", providerSummary(health.provider_pools ?? []) || "No provider stats yet");
-    setText("#proxy-count", String(proxies.proxy_count));
-    setText("#rpm", proxies.load.requests_per_minute.toFixed(2));
-    setText("#usage-spend", currency.format(estimateSpend(usage)));
-    setText("#usage-tokens", formatNumber(usage.total_tokens));
-    setText("#usage-sessions", formatNumber(usage.sessions));
     setText("#favorite-model", usage.favorite_model ?? "n/a");
     renderProviderList(
       health.provider_pools ?? [],
       proxies.provider_assignments ?? {},
       proxies.provider_configured_routes ?? {}
     );
+    renderDashboard(health, bank, proxies, usage, models);
   } catch (error) {
     setText("#status-pill", "OFFLINE");
     setText("#health-line", error instanceof Error ? error.message : String(error));
@@ -390,10 +414,189 @@ function renderProviderList(
     .join("");
 }
 
+function renderModelTable(overview: UsageOverview, models: ModelList): void {
+  const table = document.querySelector<HTMLElement>("#model-table");
+  if (!table) return;
+
+  const labels = new Map(models.data.map((model) => [model.id, model.label]));
+  const rows = Object.entries(overview.models)
+    .sort((a, b) => b[1] - a[1])
+    .map(([model, tokens]) => {
+      const inputTokens = overview.model_input_tokens?.[model] ?? 0;
+      const outputTokens = overview.model_output_tokens?.[model] ?? tokens;
+      const spend = estimateModelSpend(inputTokens, outputTokens, model);
+      return `
+        <tr>
+          <td>${escapeHtml(labels.get(model) ?? model)}</td>
+          <td>${escapeHtml(model)}</td>
+          <td>${formatNumber(inputTokens)}</td>
+          <td>${formatNumber(outputTokens)}</td>
+          <td>${currency.format(spend)}</td>
+        </tr>
+      `;
+    })
+    .join("");
+
+  table.innerHTML = rows || `<tr><td colspan="5">No model usage yet.</td></tr>`;
+}
+
+function renderProxies(proxies: Proxies): void {
+  const list = document.querySelector<HTMLElement>("#proxy-list");
+  if (!list) return;
+
+  clearElement(list);
+  const items = proxies.proxies.length ? proxies.proxies : ["No proxies currently active."];
+  for (const proxy of items) {
+    const item = document.createElement("li");
+    item.textContent = proxy;
+    list.appendChild(item);
+  }
+}
+
+function renderProxyAssignments(proxies: Proxies): void {
+  const table = document.querySelector<HTMLElement>("#provider-proxy-table");
+  if (!table) return;
+
+  clearElement(table);
+  const entries = Object.entries(proxies.provider_assignments ?? {});
+  if (!entries.length) {
+    const row = document.createElement("tr");
+    const cell = document.createElement("td");
+    cell.colSpan = 4;
+    cell.textContent = "No provider proxy assignments yet.";
+    row.appendChild(cell);
+    table.appendChild(row);
+    return;
+  }
+
+  for (const [provider, providerProxies] of entries) {
+    const configured = proxies.provider_configured_routes?.[provider] ?? providerProxies.length;
+    const row = document.createElement("tr");
+    appendCell(row, provider);
+    appendCell(row, String(configured));
+    appendCell(row, String(providerProxies.length));
+    appendCell(row, providerProxies.join(", ") || "direct");
+    table.appendChild(row);
+  }
+}
+
+function renderDailyUsage(overview: UsageOverview): void {
+  const list = document.querySelector<HTMLElement>("#daily-usage");
+  if (!list) return;
+
+  const entries = Object.entries(overview.daily)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .slice(-7);
+  list.innerHTML = entries.length
+    ? entries
+        .map(([day, tokens]) => `<li><strong>${escapeHtml(day)}</strong><span>${formatNumber(tokens)} tokens</span></li>`)
+        .join("")
+    : "<li>No daily usage yet.</li>";
+}
+
+function renderProviderPools(pools: ProviderPool[]): void {
+  const table = document.querySelector<HTMLElement>("#provider-pool-table");
+  if (!table) return;
+
+  clearElement(table);
+  if (!pools.length) {
+    const row = document.createElement("tr");
+    const cell = document.createElement("td");
+    cell.colSpan = 6;
+    cell.textContent = "No provider pool stats yet.";
+    row.appendChild(cell);
+    table.appendChild(row);
+    return;
+  }
+
+  for (const pool of pools) {
+    const row = document.createElement("tr");
+    appendCell(row, pool.provider);
+    appendCell(row, `${pool.ready}${pool.target === null ? "" : ` / ${pool.target}`}`);
+    appendCell(row, String(pool.generated ?? "n/a"));
+    appendCell(row, String(pool.failed ?? "n/a"));
+    appendCell(row, String(pool.dead ?? "n/a"));
+    appendCell(row, String(pool.cooling ?? "n/a"));
+    table.appendChild(row);
+  }
+}
+
+function providerPool(pools: ProviderPool[], provider: string): ProviderPool | undefined {
+  return pools.find((pool) => pool.provider === provider);
+}
+
+function providerProxyCount(proxies: Proxies, provider: string): number {
+  return (proxies.provider_assignments?.[provider] ?? []).length;
+}
+
+function setProviderCardValues(health: Health, proxies: Proxies): void {
+  const useAi = providerPool(health.provider_pools ?? [], "use_ai");
+  const sakana = providerPool(health.provider_pools ?? [], "sakana");
+  const faceb = providerPool(health.provider_pools ?? [], "faceb");
+
+  setText("#use-ai-ready", `${useAi?.ready ?? 0}${useAi?.target === null || useAi?.target === undefined ? "" : ` / ${useAi.target}`}`);
+  setText("#use-ai-proxies", `${providerProxyCount(proxies, "use_ai")} / ${proxies.provider_configured_routes?.use_ai ?? providerProxyCount(proxies, "use_ai")}`);
+  setText("#use-ai-mode", "Tor isolated");
+  setText("#use-ai-status", useAi && useAi.ready > 0 ? "Ready" : "Warming");
+
+  setText("#sakana-ready", String(sakana?.ready ?? 0));
+  setText("#sakana-cooling", String(sakana?.cooling ?? 0));
+  setText("#sakana-mode", "Direct egress");
+  setText("#sakana-status", (sakana?.ready ?? 0) > 0 ? "Session cached" : "Lazy");
+
+  setText("#faceb-ready", `${faceb?.ready ?? 0}${faceb?.target === null || faceb?.target === undefined ? "" : ` / ${faceb.target}`}`);
+  setText("#faceb-generated", String(faceb?.generated ?? 0));
+  setText("#faceb-dead", String(faceb?.dead ?? 0));
+  setText("#faceb-proxies", `${providerProxyCount(proxies, "faceb")} / ${proxies.provider_configured_routes?.faceb ?? providerProxyCount(proxies, "faceb")}`);
+}
+
+function renderDashboard(health: Health, bank: Bank, proxies: Proxies, overview: UsageOverview, models: ModelList): void {
+  const totalSpend = estimateSpend(overview);
+
+  setText("#server-status", health.status.toUpperCase());
+  setText("#pool-count", String(bank.warm_accounts));
+  setText("#pool-target", String(bank.pool_target));
+  setText("#tor-count", String(proxies.proxy_count));
+  setText("#request-rate", `${proxies.load.requests_per_minute.toFixed(2)} req/min`);
+  setText("#session-count", String(overview.sessions));
+  setText("#message-count", String(overview.messages));
+  setText("#token-total", formatNumber(overview.total_tokens));
+  setText("#estimated-spend", currency.format(totalSpend));
+  setText("#dashboard-favorite-model", overview.favorite_model ?? "n/a");
+  setText("#streak", `${overview.current_streak} day(s)`);
+  setText("#peak-hour", overview.peak_hour ?? "n/a");
+  setText("#reasons", health.reasons.join(", "));
+  setProviderCardValues(health, proxies);
+
+  renderModelTable(overview, models);
+  renderProxies(proxies);
+  renderProxyAssignments(proxies);
+  renderDailyUsage(overview);
+  renderProviderPools(health.provider_pools ?? []);
+}
+
+function applyView(): void {
+  const chatView = document.querySelector<HTMLElement>("#chat-view");
+  const dashboardView = document.querySelector<HTMLElement>("#dashboard-view");
+  const composer = document.querySelector<HTMLElement>("#chat-form");
+  const toggle = document.querySelector<HTMLButtonElement>("#view-toggle");
+  const label = document.querySelector<HTMLElement>("#workspace-label");
+
+  const dashboardActive = state.view === "dashboard";
+  chatView?.toggleAttribute("hidden", dashboardActive);
+  dashboardView?.toggleAttribute("hidden", !dashboardActive);
+  composer?.toggleAttribute("hidden", dashboardActive);
+  if (toggle) toggle.textContent = dashboardActive ? "Back to chat" : "Open dashboard";
+  if (label) label.textContent = dashboardActive ? "Operations dashboard" : "Gateway chat";
+  localStorage.setItem("leech-view", state.view);
+}
+
 function newChat(): void {
   state.messages = [];
   state.sessionId = crypto.randomUUID();
   localStorage.setItem("leech-session-id", state.sessionId);
+  state.view = "chat";
+  applyView();
   renderMessages();
 }
 
@@ -403,6 +606,7 @@ function attachEvents(): void {
   const select = document.querySelector<HTMLSelectElement>("#model-select");
   const newChatButton = document.querySelector<HTMLButtonElement>("#new-chat");
   const refreshButton = document.querySelector<HTMLButtonElement>("#refresh-status");
+  const viewToggle = document.querySelector<HTMLButtonElement>("#view-toggle");
 
   form?.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -429,6 +633,10 @@ function attachEvents(): void {
 
   newChatButton?.addEventListener("click", newChat);
   refreshButton?.addEventListener("click", () => { void refreshStatus(); });
+  viewToggle?.addEventListener("click", () => {
+    state.view = state.view === "dashboard" ? "chat" : "dashboard";
+    applyView();
+  });
 
   document.body.addEventListener("click", (event) => {
     const button = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-prompt]");
@@ -451,38 +659,13 @@ function renderShell(): void {
         </div>
 
         <button id="new-chat" class="primary-action" type="button">New chat</button>
+        <button id="view-toggle" class="secondary-action" type="button">Open dashboard</button>
 
         <section class="rail-section">
           <label for="model-select">Model</label>
           <select id="model-select">
             <option value="${escapeHtml(state.model)}">${escapeHtml(state.model)}</option>
           </select>
-        </section>
-
-        <section class="rail-section status-block">
-          <div>
-            <span>Spend</span>
-            <strong id="usage-spend">$0.0000</strong>
-          </div>
-          <div>
-            <span>Tokens</span>
-            <strong id="usage-tokens">0</strong>
-          </div>
-          <div>
-            <span>Sessions</span>
-            <strong id="usage-sessions">0</strong>
-          </div>
-        </section>
-
-        <section class="rail-section split-stats">
-          <div>
-            <span>Proxies</span>
-            <strong id="proxy-count">0</strong>
-          </div>
-          <div>
-            <span>Req/min</span>
-            <strong id="rpm">0.00</strong>
-          </div>
         </section>
 
         <section class="rail-section">
@@ -497,13 +680,114 @@ function renderShell(): void {
       <main class="workspace">
         <header class="topbar">
           <div>
-            <span class="thread-label">Gateway chat</span>
+            <span id="workspace-label" class="thread-label">Gateway chat</span>
             <strong id="favorite-model">n/a</strong>
           </div>
           <p id="health-line">Loading provider status</p>
         </header>
 
-        <section id="conversation" class="conversation"></section>
+        <section id="chat-view" class="conversation"></section>
+        <section id="dashboard-view" class="dashboard-view" hidden>
+          <section class="dashboard-hero">
+            <div>
+              <span class="thread-label">Leech-RS Dashboard</span>
+              <h1>Proxy Operations</h1>
+            </div>
+            <div class="status-pill">
+              <span>Server</span>
+              <strong id="server-status">Loading...</strong>
+            </div>
+          </section>
+
+          <section class="dashboard-grid metric-grid">
+            <article class="dashboard-card"><span>Estimated Spend</span><strong id="estimated-spend">$0.0000</strong><small>Total estimated cost</small></article>
+            <article class="dashboard-card"><span>Tor Instances</span><strong id="tor-count">0</strong><small>Active proxies</small></article>
+            <article class="dashboard-card"><span>Request Rate</span><strong id="request-rate">0.00 req/min</strong><small>Model endpoint load</small></article>
+            <article class="dashboard-card"><span>Favorite Model</span><strong id="dashboard-favorite-model">n/a</strong><small>Most-used model</small></article>
+          </section>
+
+          <section class="provider-section">
+            <div class="section-head"><h2>use.ai</h2><span>Primary account pool</span></div>
+            <div class="dashboard-grid provider-cards">
+              <article class="dashboard-card"><span>Warm Accounts</span><strong id="use-ai-ready">0</strong><small>Ready accounts vs target</small></article>
+              <article class="dashboard-card"><span>Proxy Routes</span><strong id="use-ai-proxies">0</strong><small>Active / configured</small></article>
+              <article class="dashboard-card"><span>Mode</span><strong id="use-ai-mode">Tor isolated</strong><small>Provider-specific Tor range</small></article>
+              <article class="dashboard-card"><span>Status</span><strong id="use-ai-status">Loading</strong><small>Pool availability</small></article>
+            </div>
+          </section>
+
+          <section class="provider-section">
+            <div class="section-head"><h2>Sakana</h2><span>Direct egress provider</span></div>
+            <div class="dashboard-grid provider-cards">
+              <article class="dashboard-card"><span>Ready Sessions</span><strong id="sakana-ready">0</strong><small>Cached sessions</small></article>
+              <article class="dashboard-card"><span>Cooling</span><strong id="sakana-cooling">0</strong><small>Backed-off sessions</small></article>
+              <article class="dashboard-card"><span>Mode</span><strong id="sakana-mode">Direct egress</strong><small>No Tor routing</small></article>
+              <article class="dashboard-card"><span>Status</span><strong id="sakana-status">Loading</strong><small>Lazy session pool</small></article>
+            </div>
+          </section>
+
+          <section class="provider-section">
+            <div class="section-head"><h2>Faceb</h2><span>API key pool</span></div>
+            <div class="dashboard-grid provider-cards">
+              <article class="dashboard-card"><span>Ready Keys</span><strong id="faceb-ready">0</strong><small>Buffered keys vs max</small></article>
+              <article class="dashboard-card"><span>Generated</span><strong id="faceb-generated">0</strong><small>Keys created this runtime</small></article>
+              <article class="dashboard-card"><span>Dead Keys</span><strong id="faceb-dead">0</strong><small>Rejected keys</small></article>
+              <article class="dashboard-card"><span>Proxy Routes</span><strong id="faceb-proxies">0</strong><small>Active / configured</small></article>
+            </div>
+          </section>
+
+          <section class="provider-section">
+            <div class="section-head"><h2>Usage Metrics</h2><span>Spend and activity</span></div>
+            <div class="dashboard-grid provider-cards">
+              <article class="dashboard-card"><span>Sessions</span><strong id="session-count">0</strong><small>Total tracked sessions</small></article>
+              <article class="dashboard-card"><span>Messages</span><strong id="message-count">0</strong><small>Total tracked completions</small></article>
+              <article class="dashboard-card"><span>Tokens</span><strong id="token-total">0</strong><small>Total estimated tokens</small></article>
+              <article class="dashboard-card"><span>Warm Accounts</span><strong><span id="pool-count">0</span> / <span id="pool-target">0</span></strong><small>Legacy use.ai pool</small></article>
+            </div>
+          </section>
+
+          <section class="dashboard-grid panels">
+            <article class="dashboard-panel">
+              <div class="panel-head"><h2>Spend By Model</h2><span id="streak">0 day(s)</span></div>
+              <div class="table-wrap">
+                <table>
+                  <thead><tr><th>Label</th><th>Model</th><th>Input</th><th>Output</th><th>Spend</th></tr></thead>
+                  <tbody id="model-table"></tbody>
+                </table>
+              </div>
+            </article>
+            <article class="dashboard-panel">
+              <div class="panel-head"><h2>Tor Proxies</h2><span id="peak-hour">n/a</span></div>
+              <ul id="proxy-list" class="stack"></ul>
+            </article>
+            <article class="dashboard-panel">
+              <div class="panel-head"><h2>Provider Pools</h2><span>Live credentials</span></div>
+              <div class="table-wrap">
+                <table>
+                  <thead><tr><th>Provider</th><th>Ready</th><th>Generated</th><th>Failed</th><th>Dead</th><th>Cooling</th></tr></thead>
+                  <tbody id="provider-pool-table"></tbody>
+                </table>
+              </div>
+            </article>
+            <article class="dashboard-panel">
+              <div class="panel-head"><h2>Provider Proxies</h2><span>Route assignments</span></div>
+              <div class="table-wrap">
+                <table>
+                  <thead><tr><th>Provider</th><th>Configured</th><th>Active</th><th>Proxies</th></tr></thead>
+                  <tbody id="provider-proxy-table"></tbody>
+                </table>
+              </div>
+            </article>
+            <article class="dashboard-panel">
+              <div class="panel-head"><h2>Daily Usage</h2><span>Last 7 active days</span></div>
+              <ul id="daily-usage" class="stack"></ul>
+            </article>
+            <article class="dashboard-panel">
+              <div class="panel-head"><h2>Health Notes</h2><span>Live status</span></div>
+              <p id="reasons" class="notes">Loading...</p>
+            </article>
+          </section>
+        </section>
 
         <form id="chat-form" class="composer">
           <textarea id="prompt" rows="1" placeholder="Message Leech-RS"></textarea>
@@ -562,6 +846,10 @@ function injectStyles(): void {
       cursor: pointer;
     }
 
+    [hidden] {
+      display: none !important;
+    }
+
     .app {
       display: grid;
       grid-template-columns: 292px minmax(0, 1fr);
@@ -608,6 +896,7 @@ function injectStyles(): void {
     }
 
     .primary-action,
+    .secondary-action,
     #send-button {
       border: 0;
       border-radius: 8px;
@@ -621,6 +910,18 @@ function injectStyles(): void {
     .primary-action:hover,
     #send-button:hover {
       background: var(--accent-dark);
+    }
+
+    .secondary-action {
+      border: 1px solid var(--line-strong);
+      background: var(--surface-alt);
+      color: var(--ink);
+    }
+
+    .secondary-action:hover {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+      color: var(--accent-dark);
     }
 
     #send-button:disabled {
@@ -653,27 +954,6 @@ function injectStyles(): void {
       background: var(--surface-alt);
       color: var(--ink);
       padding: 0 10px;
-    }
-
-    .status-block,
-    .split-stats {
-      display: grid;
-      gap: 10px;
-    }
-
-    .split-stats {
-      grid-template-columns: 1fr 1fr;
-    }
-
-    .status-block div,
-    .split-stats div {
-      display: grid;
-      gap: 3px;
-    }
-
-    .status-block strong,
-    .split-stats strong {
-      font-size: 1.08rem;
     }
 
     .rail-heading {
@@ -758,6 +1038,159 @@ function injectStyles(): void {
     .conversation {
       overflow: auto;
       padding: 32px 28px 24px;
+    }
+
+    .dashboard-view {
+      overflow: auto;
+      padding: 28px;
+    }
+
+    .dashboard-hero {
+      align-items: end;
+      display: grid;
+      gap: 18px;
+      grid-template-columns: minmax(0, 1fr) minmax(210px, 320px);
+      margin-bottom: 18px;
+    }
+
+    .dashboard-hero h1 {
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: clamp(2rem, 4vw, 3.7rem);
+      font-weight: 500;
+      line-height: 1;
+      margin: 6px 0 0;
+    }
+
+    .status-pill,
+    .dashboard-card,
+    .dashboard-panel {
+      background: linear-gradient(180deg, rgba(36, 33, 29, 0.96), rgba(26, 24, 21, 0.96));
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+    }
+
+    .status-pill {
+      align-items: center;
+      display: flex;
+      gap: 14px;
+      justify-content: space-between;
+      min-height: 78px;
+      padding: 16px;
+    }
+
+    .status-pill span,
+    .dashboard-card span,
+    .section-head span,
+    .panel-head span,
+    .notes,
+    .stack span,
+    small {
+      color: var(--muted);
+    }
+
+    .status-pill strong,
+    .dashboard-card strong {
+      font-size: 1.5rem;
+      line-height: 1.1;
+    }
+
+    .dashboard-grid {
+      display: grid;
+      gap: 14px;
+    }
+
+    .metric-grid,
+    .provider-cards {
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    }
+
+    .dashboard-card {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      justify-content: space-between;
+      min-height: 126px;
+      padding: 16px;
+    }
+
+    .provider-section {
+      margin-top: 20px;
+    }
+
+    .section-head,
+    .panel-head {
+      align-items: baseline;
+      display: flex;
+      gap: 12px;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+
+    .section-head h2,
+    .panel-head h2 {
+      font-size: 1rem;
+      margin: 0;
+    }
+
+    .panels {
+      align-items: start;
+      grid-template-columns: minmax(0, 1.5fr) minmax(280px, 1fr);
+      margin-top: 20px;
+    }
+
+    .dashboard-panel {
+      min-width: 0;
+      padding: 16px;
+    }
+
+    .table-wrap {
+      overflow: auto;
+    }
+
+    table {
+      border-collapse: collapse;
+      font-size: 0.88rem;
+      width: 100%;
+    }
+
+    th,
+    td {
+      border-bottom: 1px solid var(--line);
+      padding: 10px 8px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      color: var(--muted);
+      font-size: 0.74rem;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .stack {
+      display: grid;
+      gap: 8px;
+      list-style: none;
+      margin: 0;
+      padding: 0;
+    }
+
+    .stack li {
+      align-items: center;
+      background: var(--surface-alt);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      display: flex;
+      gap: 12px;
+      justify-content: space-between;
+      padding: 10px 12px;
+    }
+
+    .notes {
+      line-height: 1.55;
+      margin: 0;
     }
 
     .empty-state {
@@ -912,6 +1345,15 @@ function injectStyles(): void {
         text-align: left;
       }
 
+      .dashboard-view {
+        padding: 20px 14px;
+      }
+
+      .dashboard-hero,
+      .panels {
+        grid-template-columns: 1fr;
+      }
+
       .conversation {
         padding: 26px 16px 20px;
       }
@@ -946,6 +1388,7 @@ function injectStyles(): void {
 injectStyles();
 renderShell();
 attachEvents();
+applyView();
 renderMessages();
 void refreshStatus();
 setInterval(() => { void refreshStatus(); }, 15000);
