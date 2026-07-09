@@ -12,6 +12,7 @@
 
 # Keep frontend source code and project files
 !frontend/src/**
+!frontend/dist/**
 !frontend/package.json
 !frontend/package-lock.json
 !frontend/tsconfig.json
@@ -37,4 +38,3 @@ src/.leech-rs/
 # Always ignore build output and dependencies
 target/
 frontend/node_modules/
-frontend/dist/
