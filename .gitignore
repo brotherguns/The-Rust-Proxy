@@ -18,6 +18,7 @@
 
 # Keep Cargo manifest
 !Cargo.toml
+!rust-toolchain.toml
 
 # Keep config
 !config.toml

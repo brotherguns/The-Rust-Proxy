@@ -1205,6 +1205,7 @@ fn looks_like_premature_intent(text: &str) -> bool {
         "i am gonna",
         "we'll plan the implementation",
         "let me read the remaining files directly to complete the picture",
+        "let me start implementing",
     ];
     intent.iter().any(|p| lower.contains(p))
 }
