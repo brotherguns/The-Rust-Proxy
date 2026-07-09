@@ -332,7 +332,6 @@ function renderShell() {
     <div class="app">
       <aside class="rail">
         <div class="brand">
-          <div class="brand-mark">L</div>
           <div>
             <strong>Leech-RS</strong>
             <span id="status-pill">Loading</span>
@@ -409,19 +408,20 @@ function injectStyles() {
     const style = document.createElement("style");
     style.textContent = `
     :root {
-      color-scheme: light;
-      --bg: #f5f7f2;
-      --surface: #ffffff;
-      --surface-alt: #edf1ea;
-      --ink: #202522;
-      --muted: #68726a;
-      --line: #d8ded4;
-      --line-strong: #b8c2b5;
-      --accent: #bd5b4b;
-      --accent-dark: #893c33;
-      --accent-soft: #f4ddd8;
-      --green: #41695a;
-      --shadow: 0 18px 42px rgba(31, 39, 33, 0.1);
+      color-scheme: dark;
+      --bg: #11100e;
+      --surface: #1a1815;
+      --surface-alt: #24211d;
+      --ink: #f3eee6;
+      --muted: #a99f92;
+      --line: rgba(243, 238, 230, 0.11);
+      --line-strong: rgba(243, 238, 230, 0.19);
+      --accent: #d86f50;
+      --accent-dark: #f08a66;
+      --accent-soft: #32201b;
+      --accent-line: rgba(216, 111, 80, 0.42);
+      --green: #96b9a3;
+      --shadow: 0 18px 42px rgba(0, 0, 0, 0.34);
     }
 
     * {
@@ -430,7 +430,9 @@ function injectStyles() {
 
     body {
       margin: 0;
-      background: var(--bg);
+      background:
+        radial-gradient(circle at 70% -20%, rgba(216, 111, 80, 0.12), transparent 34%),
+        linear-gradient(180deg, #171511 0%, var(--bg) 42%);
       color: var(--ink);
       font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       letter-spacing: 0;
@@ -460,17 +462,15 @@ function injectStyles() {
       min-height: 100vh;
       padding: 18px;
       border-right: 1px solid var(--line);
-      background: #fbfcfa;
+      background: #15130f;
     }
 
     .brand {
       display: flex;
       align-items: center;
-      gap: 10px;
-      min-height: 44px;
+      min-height: 36px;
     }
 
-    .brand-mark,
     .avatar,
     .mark {
       display: grid;
@@ -479,12 +479,6 @@ function injectStyles() {
       background: var(--surface-alt);
       color: var(--green);
       font-weight: 700;
-    }
-
-    .brand-mark {
-      width: 36px;
-      height: 36px;
-      border-radius: 8px;
     }
 
     .brand strong {
@@ -543,7 +537,7 @@ function injectStyles() {
       margin-top: 8px;
       border: 1px solid var(--line-strong);
       border-radius: 8px;
-      background: #fff;
+      background: var(--surface-alt);
       color: var(--ink);
       padding: 0 10px;
     }
@@ -581,7 +575,7 @@ function injectStyles() {
     .suggestion {
       border: 1px solid var(--line-strong);
       border-radius: 8px;
-      background: #fff;
+      background: var(--surface-alt);
       color: var(--ink);
       min-height: 32px;
       padding: 0 10px;
@@ -629,7 +623,7 @@ function injectStyles() {
       min-height: 70px;
       padding: 14px 28px;
       border-bottom: 1px solid var(--line);
-      background: rgba(245, 247, 242, 0.88);
+      background: rgba(17, 16, 14, 0.88);
       backdrop-filter: blur(12px);
     }
 
@@ -708,7 +702,7 @@ function injectStyles() {
       grid-column: 1;
       grid-row: 1;
       background: var(--accent-soft);
-      border-color: #e8bbb2;
+      border-color: var(--accent-line);
     }
 
     .avatar {
@@ -763,7 +757,7 @@ function injectStyles() {
     }
 
     textarea::placeholder {
-      color: #7d867e;
+      color: #7f7568;
     }
 
     .composer-actions {
