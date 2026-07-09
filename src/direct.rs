@@ -14,6 +14,7 @@ use tokio_socks::tcp::Socks5Stream;
 use tokio_tungstenite::{client_async_tls_with_config, MaybeTlsStream, WebSocketStream};
 use tungstenite::{client::IntoClientRequest, protocol::WebSocketConfig, Message};
 
+use rand::Rng;
 use crate::account_pool::Account;
 use crate::config::Config;
 use crate::filter::InjectionFilter;
@@ -1202,11 +1203,28 @@ fn looks_like_premature_intent(text: &str) -> bool {
         "i plan to",
         "i'm gonna",
         "i am gonna",
+        "we'll plan the implementation",
+        "let me read the remaining files directly to complete the picture",
     ];
     intent.iter().any(|p| lower.contains(p))
 }
 
 // ---------- Streaming completion ----------
+
+/// Compute an exponential-backoff delay for retry attempt `attempt` (1-indexed:
+/// the first retry is attempt 1). Delay grows as `base * factor^(attempt-1)`,
+/// capped at `max`, with equal jitter applied so the actual wait lands in
+/// `[cap/2, cap]`. Jitter prevents thundering-herd retries against use.ai when
+/// several requests get rate-limited simultaneously.
+fn backoff_duration(base: Duration, max: Duration, factor: f64, attempt: usize) -> Duration {
+    let exp = attempt.saturating_sub(1) as f64;
+    let raw = base.as_millis() as f64 * factor.powf(exp);
+    let cap = raw.min(max.as_millis() as f64).max(0.0);
+    let half = cap / 2.0;
+    let mut rng = rand::thread_rng();
+    let jitter = rng.gen_range(0.0..=half);
+    Duration::from_millis((half + jitter) as u64)
+}
 
 pub async fn stream_completion(
     model: &str,
@@ -1214,8 +1232,6 @@ pub async fn stream_completion(
     proxy_url: Option<&str>,
     account: Account,
 ) -> BoxStream<'static, Result<String>> {
-    use futures::stream::{self, BoxStream};
-
     let cfg = Config::load().unwrap_or_default();
     let chat_id = uuid::Uuid::new_v4().to_string();
     // Base URI without token — the token is added in attempt() after
@@ -1231,6 +1247,107 @@ pub async fn stream_completion(
     let idle_timeout = Duration::from_secs(cfg.direct.ws_idle_timeout_sec);
     let retries = cfg.direct.direct_ws_retries.max(1);
     let model_prefix = cfg.direct.model_prefix.clone();
+    let auto_continue = cfg.direct.auto_continue;
+    let auto_continue_max = cfg.direct.auto_continue_max;
+    let backoff_base = Duration::from_millis(cfg.direct.direct_ws_backoff_base_ms);
+    let backoff_max = Duration::from_millis(cfg.direct.direct_ws_backoff_max_ms);
+    let backoff_factor = cfg.direct.direct_ws_backoff_factor;
+
+    // Build the ordered list of proxy assignments to try. We prefer the
+    // supplied proxy for the first `retries` attempts, then fall back to
+    // direct egress as a last resort (mirrors the original behavior).
+    let mut attempt_proxies: Vec<Option<String>> = Vec::with_capacity(retries as usize + 1);
+    for _ in 0..retries {
+        attempt_proxies.push(proxy_url.map(String::from));
+    }
+    if proxy_url.is_some() {
+        attempt_proxies.push(None);
+    }
+
+    // Owned captures for the 'static retry stream.
+    let messages_owned = messages.to_vec();
+    let account_owned = account.clone();
+    let model_owned = model.to_string();
+
+    // Unified exponential-backoff retry stream. This retries BOTH setup
+    // failures (attempt() returns Err) and in-stream errors that occur before
+    // any content has been emitted to the client — e.g. the mid-stream
+    // `rate-limit-error` frame from use.ai. Once a single Ok chunk has been
+    // yielded we can no longer restart transparently (the SSE body has begun),
+    // so later errors propagate as-is.
+    let merged = async_stream::stream! {
+        let mut emitted_any = false;
+        let mut last_err: Option<anyhow::Error> = None;
+        let mut current: Option<BoxStream<'static, Result<String>>> = None;
+        let mut step: usize = 0;
+
+        loop {
+            if current.is_none() {
+                if step >= attempt_proxies.len() {
+                    let err = last_err.unwrap_or_else(|| anyhow!("all retries failed"));
+                    yield Err(err);
+                    return;
+                }
+                // Backoff between attempts; skip the very first try.
+                if step > 0 {
+                    let delay = backoff_duration(backoff_base, backoff_max, backoff_factor, step);
+                    debug!(
+                        "direct retry {}/{} after {:?} (emitted_any={})",
+                        step + 1,
+                        attempt_proxies.len(),
+                        delay,
+                        emitted_any
+                    );
+                    tokio::time::sleep(delay).await;
+                }
+                let attempt_proxy = attempt_proxies[step].clone();
+                step += 1;
+                match attempt(
+                    uri_base.clone(),
+                    chat_id.clone(),
+                    account_owned.clone(),
+                    model_owned.clone(),
+                    messages_owned.clone(),
+                    attempt_proxy,
+                    model_prefix.clone(),
+                    open_timeout,
+                    idle_timeout,
+                    auto_continue,
+                    auto_continue_max,
+                )
+                .await
+                {
+                    Ok(s) => current = Some(s),
+                    Err(e) => {
+                        last_err = Some(e);
+                        continue;
+                    }
+                }
+            }
+
+            match current.as_mut().unwrap().next().await {
+                Some(Ok(item)) => {
+                    if !item.is_empty() {
+                        emitted_any = true;
+                    }
+                    yield Ok(item);
+                }
+                Some(Err(e)) => {
+                    last_err = Some(e);
+                    current.take();
+                    if emitted_any {
+                        // Content already streamed — cannot restart the SSE
+                        // body, so surface the error to the client.
+                        let err = last_err.unwrap();
+                        yield Err(err);
+                        return;
+                    }
+                    // No content emitted yet: loop and retry with backoff.
+                }
+                None => return, // clean end of stream
+            }
+        }
+    };
 
     #[allow(clippy::too_many_arguments)]
     async fn attempt(
@@ -1436,41 +1553,7 @@ pub async fn stream_completion(
         Ok(Box::pin(stream) as BoxStream<'static, Result<String>>)
     }
 
-    let mut last_err = None;
-    let mut attempts = Vec::new();
-    for _ in 1..=retries {
-        attempts.push(proxy_url.map(String::from));
-    }
-    if proxy_url.is_some() {
-        attempts.push(None);
-    }
-
-    for attempt_proxy in attempts {
-        match attempt(
-            uri_base.clone(),
-            chat_id.clone(),
-            account.clone(),
-            model.to_string(),
-            messages.to_vec(),
-            attempt_proxy,
-            model_prefix.clone(),
-            open_timeout,
-            idle_timeout,
-            cfg.direct.auto_continue,
-            cfg.direct.auto_continue_max,
-        )
-        .await
-        {
-            Ok(stream) => return stream,
-            Err(e) => {
-                last_err = Some(e);
-                tokio::time::sleep(Duration::from_millis(500)).await;
-            }
-        }
-    }
-
-    let err = last_err.unwrap_or_else(|| anyhow!("all retries failed"));
-    Box::pin(stream::once(async move { Err(err) }))
+    Box::pin(merged)
 }
 
 fn summarize_frame_messages(frame: &Value) -> String {
@@ -1510,6 +1593,29 @@ fn summarize_frame_messages(frame: &Value) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn backoff_grows_exponentially_and_caps_at_max() {
+        let base = Duration::from_millis(500);
+        let max = Duration::from_millis(8000);
+        let factor = 2.0;
+
+        // Attempt 1 -> cap = 500ms, so delay in [250, 500].
+        let d1 = backoff_duration(base, max, factor, 1).as_millis();
+        assert!((250..=500).contains(&d1), "attempt 1 out of range: {d1}");
+
+        // Attempt 2 -> cap = 1000ms, so delay in [500, 1000].
+        let d2 = backoff_duration(base, max, factor, 2).as_millis();
+        assert!((500..=1000).contains(&d2), "attempt 2 out of range: {d2}");
+
+        // Attempt 5 -> raw would be 8000ms (== cap), so delay in [4000, 8000].
+        let d5 = backoff_duration(base, max, factor, 5).as_millis();
+        assert!((4000..=8000).contains(&d5), "attempt 5 out of range: {d5}");
+
+        // Attempt 6 -> raw would be 16000ms, capped to 8000ms, delay in [4000, 8000].
+        let d6 = backoff_duration(base, max, factor, 6).as_millis();
+        assert!((4000..=8000).contains(&d6), "attempt 6 not capped: {d6}");
+    }
 
     fn test_account() -> Account {
         Account {

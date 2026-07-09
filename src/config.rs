@@ -29,7 +29,14 @@ pub struct DirectConfig {
     pub ws_open_timeout_sec: u64,
     pub ws_idle_timeout_sec: u64,
     pub direct_ws_retries: u32,
+    /// Maximum total attempts (setup + in-stream retries) before giving up.
     pub direct_max_concurrency: usize,
+    /// Exponential backoff base delay for the first retry between attempts.
+    pub direct_ws_backoff_base_ms: u64,
+    /// Exponential backoff cap; no single retry waits longer than this.
+    pub direct_ws_backoff_max_ms: u64,
+    /// Exponential backoff growth factor applied per retry step.
+    pub direct_ws_backoff_factor: f64,
     /// When true, the proxy auto-sends a "Continue." follow-up turn on the
     /// same WebSocket if the assistant's turn looks like a premature intent
     /// announcement (e.g. "I'll fix the UI, then build a patch.") with no
@@ -94,6 +101,9 @@ impl Default for Config {
                 ws_idle_timeout_sec: 90,
                 direct_ws_retries: 2,
                 direct_max_concurrency: 24,
+                direct_ws_backoff_base_ms: 500,
+                direct_ws_backoff_max_ms: 8000,
+                direct_ws_backoff_factor: 2.0,
                 auto_continue: true,
                 auto_continue_max: 3,
             },
