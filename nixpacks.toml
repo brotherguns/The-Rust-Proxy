@@ -5,4 +5,4 @@ nixPkgs = ["tor", "openssl", "pkg-config"]
 cmds = ["cargo build --release"]
 
 [start]
-cmd = "./target/release/the-rust-proxy"
+cmd = "./target/release/leech-rs"
