@@ -254,14 +254,14 @@ async function refreshStatus() {
         setText("#usage-tokens", formatNumber(usage.total_tokens));
         setText("#usage-sessions", formatNumber(usage.sessions));
         setText("#favorite-model", usage.favorite_model ?? "n/a");
-        renderProviderList(health.provider_pools ?? [], proxies.provider_assignments ?? {});
+        renderProviderList(health.provider_pools ?? [], proxies.provider_assignments ?? {}, proxies.provider_configured_routes ?? {});
     }
     catch (error) {
         setText("#status-pill", "OFFLINE");
         setText("#health-line", error instanceof Error ? error.message : String(error));
     }
 }
-function renderProviderList(pools, assignments) {
+function renderProviderList(pools, assignments, configuredRoutes) {
     const list = document.querySelector("#provider-list");
     if (!list)
         return;
@@ -272,12 +272,16 @@ function renderProviderList(pools, assignments) {
     list.innerHTML = pools
         .map((pool) => {
         const target = pool.target === null ? "" : ` / ${pool.target}`;
-        const proxyCount = assignments[pool.provider]?.length ?? 0;
+        const activeRoutes = assignments[pool.provider]?.length ?? 0;
+        const configured = configuredRoutes[pool.provider] ?? activeRoutes;
+        const routeText = configured > activeRoutes
+            ? `${configured} configured routes, ${activeRoutes} active`
+            : `${activeRoutes} active proxy routes`;
         return `
         <li>
           <span>${escapeHtml(pool.provider)}</span>
           <strong>${pool.ready}${target}</strong>
-          <small>${proxyCount} proxy routes</small>
+          <small>${routeText}</small>
         </li>
       `;
     })
