@@ -60,11 +60,16 @@ const currency = new Intl.NumberFormat("en-US", {
     maximumFractionDigits: 4,
     style: "currency"
 });
+const DB_NAME = "leech-browser-workspace";
+const DB_VERSION = 1;
+const FILE_STORE = "files";
 const state = {
+    files: [],
     isSending: false,
     messages: [],
     model: localStorage.getItem("leech-model") ?? "gpt-5-4",
     models: [],
+    selectedFileId: localStorage.getItem("leech-selected-file-id"),
     sessionId: localStorage.getItem("leech-session-id") ?? crypto.randomUUID(),
     view: (localStorage.getItem("leech-view") === "dashboard" ? "dashboard" : "chat")
 };
@@ -120,6 +125,70 @@ function appendCell(row, value) {
     cell.textContent = value;
     row.appendChild(cell);
 }
+function openWorkspaceDb() {
+    return new Promise((resolve, reject) => {
+        const request = indexedDB.open(DB_NAME, DB_VERSION);
+        request.onupgradeneeded = () => {
+            const db = request.result;
+            if (!db.objectStoreNames.contains(FILE_STORE)) {
+                db.createObjectStore(FILE_STORE, { keyPath: "id" });
+            }
+        };
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error ?? new Error("Failed to open browser workspace"));
+    });
+}
+async function loadWorkspaceFiles() {
+    const db = await openWorkspaceDb();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(FILE_STORE, "readonly");
+        const store = tx.objectStore(FILE_STORE);
+        const request = store.getAll();
+        request.onsuccess = () => {
+            resolve(request.result.sort((a, b) => b.updatedAt - a.updatedAt));
+            db.close();
+        };
+        request.onerror = () => {
+            reject(request.error ?? new Error("Failed to load files"));
+            db.close();
+        };
+    });
+}
+async function saveWorkspaceFile(file) {
+    const db = await openWorkspaceDb();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(FILE_STORE, "readwrite");
+        tx.objectStore(FILE_STORE).put(file);
+        tx.oncomplete = () => {
+            db.close();
+            resolve();
+        };
+        tx.onerror = () => {
+            const error = tx.error ?? new Error("Failed to save file");
+            db.close();
+            reject(error);
+        };
+    });
+}
+async function deleteWorkspaceFile(id) {
+    const db = await openWorkspaceDb();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(FILE_STORE, "readwrite");
+        tx.objectStore(FILE_STORE).delete(id);
+        tx.oncomplete = () => {
+            db.close();
+            resolve();
+        };
+        tx.onerror = () => {
+            const error = tx.error ?? new Error("Failed to delete file");
+            db.close();
+            reject(error);
+        };
+    });
+}
+function selectedFile() {
+    return state.files.find((file) => file.id === state.selectedFileId);
+}
 function providerSummary(pools) {
     return pools
         .map((pool) => {
@@ -173,6 +242,123 @@ function renderMessages() {
         .join("");
     conversation.scrollTop = conversation.scrollHeight;
 }
+function renderWorkspace() {
+    const list = document.querySelector("#file-list");
+    const editor = document.querySelector("#file-editor");
+    const fileName = document.querySelector("#file-name");
+    const meta = document.querySelector("#file-meta");
+    const file = selectedFile();
+    if (list) {
+        list.innerHTML = state.files.length
+            ? state.files
+                .map((item) => `
+            <button class="file-item ${item.id === state.selectedFileId ? "active" : ""}" type="button" data-file-id="${escapeHtml(item.id)}">
+              <span>${escapeHtml(item.name)}</span>
+              <small>${formatNumber(item.content.length)} chars</small>
+            </button>
+          `)
+                .join("")
+            : `<p class="empty-files">No browser files yet.</p>`;
+    }
+    if (editor) {
+        editor.value = file?.content ?? "";
+        editor.disabled = !file;
+    }
+    if (fileName) {
+        fileName.value = file?.name ?? "";
+        fileName.disabled = !file;
+    }
+    if (meta) {
+        meta.textContent = file
+            ? `Stored in this browser • ${formatNumber(file.content.length)} chars`
+            : "Stored only in this browser";
+    }
+    localStorage.setItem("leech-selected-file-id", state.selectedFileId ?? "");
+}
+async function refreshWorkspace() {
+    state.files = await loadWorkspaceFiles();
+    if (state.selectedFileId && !state.files.some((file) => file.id === state.selectedFileId)) {
+        state.selectedFileId = null;
+    }
+    if (!state.selectedFileId && state.files.length > 0) {
+        state.selectedFileId = state.files[0].id;
+    }
+    renderWorkspace();
+}
+async function importFiles(fileList) {
+    if (!fileList?.length)
+        return;
+    for (const file of Array.from(fileList)) {
+        if (!file.type.startsWith("text/") && !/\.(txt|md|json|toml|rs|ts|tsx|js|jsx|css|html|yaml|yml|xml|csv|py|go|java|c|cpp|h|hpp)$/i.test(file.name)) {
+            continue;
+        }
+        const content = await file.text();
+        const workspaceFile = {
+            content,
+            id: id("file"),
+            name: file.name,
+            updatedAt: Date.now()
+        };
+        await saveWorkspaceFile(workspaceFile);
+        state.selectedFileId = workspaceFile.id;
+    }
+    await refreshWorkspace();
+}
+async function createNewFile() {
+    const file = {
+        content: "",
+        id: id("file"),
+        name: `untitled-${state.files.length + 1}.txt`,
+        updatedAt: Date.now()
+    };
+    await saveWorkspaceFile(file);
+    state.selectedFileId = file.id;
+    await refreshWorkspace();
+}
+async function saveSelectedFileFromEditor() {
+    const file = selectedFile();
+    const editor = document.querySelector("#file-editor");
+    const fileName = document.querySelector("#file-name");
+    if (!file || !editor || !fileName)
+        return;
+    const updated = {
+        ...file,
+        content: editor.value,
+        name: fileName.value.trim() || file.name,
+        updatedAt: Date.now()
+    };
+    await saveWorkspaceFile(updated);
+    state.selectedFileId = updated.id;
+    await refreshWorkspace();
+}
+async function deleteSelectedFileFromWorkspace() {
+    const file = selectedFile();
+    if (!file)
+        return;
+    await deleteWorkspaceFile(file.id);
+    state.selectedFileId = null;
+    await refreshWorkspace();
+}
+function latestAssistantReply() {
+    return [...state.messages].reverse().find((message) => message.role === "assistant")?.content;
+}
+function extractEditableContent(reply) {
+    const fenced = reply.match(/```(?:[a-zA-Z0-9_+\-.#]+)?\n([\s\S]*?)```/);
+    return (fenced?.[1] ?? reply).trim();
+}
+async function applyLatestReplyToSelectedFile() {
+    const file = selectedFile();
+    const reply = latestAssistantReply();
+    if (!file || !reply)
+        return;
+    const updated = {
+        ...file,
+        content: extractEditableContent(reply),
+        updatedAt: Date.now()
+    };
+    await saveWorkspaceFile(updated);
+    await refreshWorkspace();
+}
 function formatMessage(content) {
     const escaped = escapeHtml(content.trim() || "...");
     return escaped
@@ -193,10 +379,31 @@ function setSending(isSending) {
     }
 }
 function requestMessages() {
-    return state.messages.map((message) => ({
+    const messages = state.messages.map((message) => ({
         content: message.content,
         role: message.role
     }));
+    const file = selectedFile();
+    if (!file) {
+        return messages;
+    }
+    const fileContext = [
+        "Browser-local workspace file context.",
+        `File: ${file.name}`,
+        "When asked to edit this file, return the full replacement content in one fenced code block.",
+        "",
+        "Current file contents:",
+        "```",
+        file.content.slice(0, 80000),
+        "```"
+    ].join("\n");
+    return [
+        {
+            role: "user",
+            content: fileContext
+        },
+        ...messages
+    ];
 }
 async function sendMessage(content) {
     if (state.isSending)
@@ -474,6 +681,12 @@ function attachEvents() {
     const newChatButton = document.querySelector("#new-chat");
     const refreshButton = document.querySelector("#refresh-status");
     const viewToggle = document.querySelector("#view-toggle");
+    const fileInput = document.querySelector("#file-input");
+    const importFilesButton = document.querySelector("#import-files");
+    const newFileButton = document.querySelector("#new-file");
+    const saveFileButton = document.querySelector("#save-file");
+    const deleteFileButton = document.querySelector("#delete-file");
+    const applyReplyButton = document.querySelector("#apply-reply");
     form?.addEventListener("submit", (event) => {
         event.preventDefault();
         if (!prompt)
@@ -501,7 +714,23 @@ function attachEvents() {
         state.view = state.view === "dashboard" ? "chat" : "dashboard";
         applyView();
     });
+    importFilesButton?.addEventListener("click", () => fileInput?.click());
+    fileInput?.addEventListener("change", () => {
+        void importFiles(fileInput.files).finally(() => {
+            fileInput.value = "";
+        });
+    });
+    newFileButton?.addEventListener("click", () => { void createNewFile(); });
+    saveFileButton?.addEventListener("click", () => { void saveSelectedFileFromEditor(); });
+    deleteFileButton?.addEventListener("click", () => { void deleteSelectedFileFromWorkspace(); });
+    applyReplyButton?.addEventListener("click", () => { void applyLatestReplyToSelectedFile(); });
     document.body.addEventListener("click", (event) => {
+        const fileButton = event.target.closest("[data-file-id]");
+        if (fileButton) {
+            state.selectedFileId = fileButton.dataset.fileId ?? null;
+            renderWorkspace();
+            return;
+        }
         const button = event.target.closest("[data-prompt]");
         if (!button || !prompt)
             return;
@@ -529,6 +758,26 @@ function renderShell() {
           <select id="model-select">
             <option value="${escapeHtml(state.model)}">${escapeHtml(state.model)}</option>
           </select>
+        </section>
+
+        <section class="rail-section workspace-section">
+          <div class="rail-heading">
+            <span>Files</span>
+            <button id="import-files" type="button">Import</button>
+          </div>
+          <input id="file-input" type="file" multiple hidden />
+          <div id="file-list" class="file-list"></div>
+          <div class="file-editor-head">
+            <input id="file-name" class="file-name" type="text" placeholder="No file selected" disabled />
+            <span id="file-meta">Stored only in this browser</span>
+          </div>
+          <textarea id="file-editor" class="file-editor" rows="8" placeholder="Import or create a file to edit it locally." disabled></textarea>
+          <div class="file-actions">
+            <button id="new-file" type="button">New</button>
+            <button id="save-file" type="button">Save</button>
+            <button id="apply-reply" type="button">Apply reply</button>
+            <button id="delete-file" type="button">Delete</button>
+          </div>
         </section>
 
         <section class="rail-section">
@@ -827,7 +1076,8 @@ function injectStyles() {
     }
 
     .rail-heading button,
-    .suggestion {
+    .suggestion,
+    .file-actions button {
       border: 1px solid var(--line-strong);
       border-radius: 8px;
       background: var(--surface-alt);
@@ -837,9 +1087,93 @@ function injectStyles() {
     }
 
     .rail-heading button:hover,
-    .suggestion:hover {
+    .suggestion:hover,
+    .file-actions button:hover {
       border-color: var(--accent);
       color: var(--accent-dark);
+    }
+
+    .workspace-section {
+      display: grid;
+      gap: 10px;
+    }
+
+    .file-list {
+      display: grid;
+      gap: 6px;
+      max-height: 180px;
+      overflow: auto;
+    }
+
+    .file-item {
+      align-items: center;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface-alt);
+      color: var(--ink);
+      display: grid;
+      gap: 3px;
+      min-height: 42px;
+      padding: 8px 10px;
+      text-align: left;
+    }
+
+    .file-item.active {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+    }
+
+    .file-item span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .file-item small,
+    .empty-files,
+    #file-meta {
+      color: var(--muted);
+      font-size: 0.78rem;
+      margin: 0;
+    }
+
+    .file-editor-head {
+      display: grid;
+      gap: 5px;
+    }
+
+    .file-name {
+      border: 1px solid var(--line-strong);
+      border-radius: 8px;
+      background: var(--surface-alt);
+      color: var(--ink);
+      min-height: 34px;
+      padding: 0 9px;
+      width: 100%;
+    }
+
+    .file-editor {
+      border: 1px solid var(--line-strong);
+      border-radius: 8px;
+      background: #100f0d;
+      color: var(--ink);
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      font-size: 0.78rem;
+      min-height: 148px;
+      padding: 9px;
+      resize: vertical;
+      width: 100%;
+    }
+
+    .file-editor:disabled,
+    .file-name:disabled {
+      opacity: 0.62;
+    }
+
+    .file-actions {
+      display: grid;
+      gap: 6px;
+      grid-template-columns: 1fr 1fr;
     }
 
     .provider-list {
@@ -1251,5 +1585,6 @@ renderShell();
 attachEvents();
 applyView();
 renderMessages();
+void refreshWorkspace();
 void refreshStatus();
 setInterval(() => { void refreshStatus(); }, 15000);
