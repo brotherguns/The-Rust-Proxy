@@ -15,6 +15,7 @@ use axum::{
     http::StatusCode,
     middleware::{from_fn, Next},
     response::{IntoResponse, Response},
+    routing::get_service,
     Extension, Router,
 };
 use std::sync::Arc;
@@ -50,7 +51,7 @@ pub fn create_routes(
 ) -> Router {
     let dashboard_dir = std::path::PathBuf::from("frontend").join("dist");
     let dashboard_index = dashboard_dir.join("index.html");
-    let dashboard_service = get_dashboard_service(dashboard_dir, dashboard_index);
+    let dashboard_service = get_dashboard_service(dashboard_dir, dashboard_index.clone());
 
     Router::new()
         .nest("/v1", chat::routes())
@@ -59,6 +60,8 @@ pub fn create_routes(
         .nest("/", health::routes())
         .nest("/", proxies::routes())
         .nest("/", usage::routes())
+        .route("/", get_service(ServeFile::new(dashboard_index.clone())))
+        .route("/index.html", get_service(ServeFile::new(dashboard_index)))
         .route("/config", axum::routing::get(removed_config_handler))
         .fallback_service(dashboard_service)
         .layer(from_fn(record_request))
@@ -87,7 +90,7 @@ mod tests {
     use crate::config::Config;
     use crate::load_monitor::LoadMonitor;
     use crate::tor_manager::TorManager;
-    use axum::body::Body;
+    use axum::body::{to_bytes, Body};
     use axum::http::{Request, StatusCode};
     use std::sync::Arc;
     use tower::util::ServiceExt;
@@ -141,6 +144,24 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(dashboard.status(), StatusCode::OK);
+        let body = to_bytes(dashboard.into_body(), usize::MAX).await.unwrap();
+        let body = std::str::from_utf8(&body).unwrap();
+        assert!(body.contains(r#"src="./main.js""#));
+
+        let dashboard_js = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/main.js")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(dashboard_js.status(), StatusCode::OK);
+        let body = to_bytes(dashboard_js.into_body(), usize::MAX).await.unwrap();
+        let body = std::str::from_utf8(&body).unwrap();
+        assert!(body.contains("renderShell"));
 
         let config = app
             .oneshot(

@@ -152,6 +152,15 @@ impl Config {
             .add_source(config::File::with_name("config").required(false))
             .add_source(config::Environment::with_prefix("LEECH").separator("__"))
             .build()?;
-        builder.try_deserialize()
+        let mut cfg: Config = builder.try_deserialize()?;
+        if let Ok(port) = std::env::var("PORT") {
+            if let Ok(port) = port.parse::<u16>() {
+                cfg.server.port = port;
+                if std::env::var_os("LEECH__SERVER__HOST").is_none() {
+                    cfg.server.host = "0.0.0.0".into();
+                }
+            }
+        }
+        Ok(cfg)
     }
 }
