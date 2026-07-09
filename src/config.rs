@@ -37,6 +37,10 @@ pub struct DirectConfig {
     pub direct_ws_backoff_max_ms: u64,
     /// Exponential backoff growth factor applied per retry step.
     pub direct_ws_backoff_factor: f64,
+    /// Minimum spacing between consecutive use.ai sends through the same
+    /// proxy (Tor exit). use.ai rate-limits per IP, so requests sharing an
+    /// exit are gated by this cooldown before connecting. 0 disables it.
+    pub use_ai_per_proxy_cooldown_ms: u64,
     /// When true, the proxy auto-sends a "Continue." follow-up turn on the
     /// same WebSocket if the assistant's turn looks like a premature intent
     /// announcement (e.g. "I'll fix the UI, then build a patch.") with no
@@ -104,6 +108,7 @@ impl Default for Config {
                 direct_ws_backoff_base_ms: 500,
                 direct_ws_backoff_max_ms: 8000,
                 direct_ws_backoff_factor: 2.0,
+                use_ai_per_proxy_cooldown_ms: 5000,
                 auto_continue: true,
                 auto_continue_max: 3,
             },

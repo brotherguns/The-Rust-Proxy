@@ -6,6 +6,7 @@ use futures::{SinkExt, StreamExt};
 use reqwest::cookie::{CookieStore, Jar};
 use reqwest::Client;
 use serde_json::{json, Value};
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::TcpStream;
@@ -22,6 +23,41 @@ use crate::models::resolve_model;
 use crate::utils::{gen_email, now_secs};
 use futures::stream::BoxStream;
 use tracing::{debug, error, info, warn};
+
+use once_cell::sync::Lazy;
+use std::sync::Mutex;
+use std::time::Instant;
+
+/// Tracks the next-allowed send time per use.ai proxy (Tor exit). Requests
+/// through the same exit are spaced by `use_ai_per_proxy_cooldown_ms` so the
+/// per-IP rate limit doesn't trip. Keyed by proxy URL, or "direct" for no
+/// proxy. use.ai rate-limits per IP, not per account, so this is per-proxy.
+static PER_PROXY_NEXT_SEND: Lazy<Mutex<HashMap<String, Instant>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
+
+/// Gate consecutive use.ai sends through the same proxy. Reserves the next
+/// available slot under the lock so concurrent requests space out rather than
+/// all sleeping and waking together, then sleeps for the remaining wait.
+async fn await_per_proxy_cooldown(proxy_key: &str, cooldown: Duration) {
+    if cooldown.is_zero() {
+        return;
+    }
+    let wait = {
+        let mut map = PER_PROXY_NEXT_SEND.lock().unwrap();
+        let now = Instant::now();
+        let earliest = map.get(proxy_key).copied().unwrap_or(now);
+        let wait = earliest.saturating_duration_since(now);
+        map.insert(proxy_key.to_string(), earliest + cooldown);
+        wait
+    };
+    if !wait.is_zero() {
+        debug!(
+            "per-proxy cooldown: waiting {:?} before sending via {}",
+            wait, proxy_key
+        );
+        tokio::time::sleep(wait).await;
+    }
+}
 
 const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36";
 
@@ -235,6 +271,28 @@ pub async fn create_account(proxy_url: Option<&str>) -> Result<Account> {
 
 fn is_rate_limit_error(err: &anyhow::Error) -> bool {
     err.to_string().contains("429") || format!("{:?}", err).contains("429")
+}
+
+/// Sentinel for a use.ai `rate-limit-error` frame. Carried as a typed source
+/// inside the `anyhow::Error` yielded by the stream so consumers can detect it
+/// via `is_stream_rate_limit_error` and avoid injecting the raw error text
+/// into the model's content stream.
+#[derive(Debug)]
+pub struct RateLimitError;
+
+impl std::fmt::Display for RateLimitError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "rate limit error")
+    }
+}
+
+impl std::error::Error for RateLimitError {}
+
+/// True if a stream error is a use.ai rate-limit error. These should not be
+/// surfaced into the client-visible content stream; the request either gets
+/// retried transparently (pre-content) or ends cleanly (post-content).
+pub fn is_stream_rate_limit_error(err: &anyhow::Error) -> bool {
+    err.downcast_ref::<RateLimitError>().is_some()
 }
 
 fn build_client_with_jar(proxy_url: Option<&str>) -> Result<(Client, Arc<Jar>)> {
@@ -1264,6 +1322,7 @@ pub async fn stream_completion(
     let backoff_base = Duration::from_millis(cfg.direct.direct_ws_backoff_base_ms);
     let backoff_max = Duration::from_millis(cfg.direct.direct_ws_backoff_max_ms);
     let backoff_factor = cfg.direct.direct_ws_backoff_factor;
+    let per_proxy_cooldown = Duration::from_millis(cfg.direct.use_ai_per_proxy_cooldown_ms);
 
     // Build the ordered list of proxy assignments to try. We prefer the
     // supplied proxy for the first `retries` attempts, then fall back to
@@ -1327,6 +1386,7 @@ pub async fn stream_completion(
                     auto_continue,
                     auto_continue_max,
                     debug_protocol,
+                    per_proxy_cooldown,
                 )
                 .await
                 {
@@ -1376,11 +1436,18 @@ pub async fn stream_completion(
         auto_continue: bool,
         auto_continue_max: u32,
         debug_protocol: bool,
+        per_proxy_cooldown: Duration,
     ) -> Result<BoxStream<'static, Result<String>>> {
         // Use the account's original signup proxy for refresh and WS — use.ai
         // binds the session to the signup IP. Connecting from a different Tor
         // exit causes AUTH_REQUIRED (4001) on the agent WebSocket.
         let account_proxy = account.proxy_url.as_deref().or(proxy_url.as_deref());
+
+        // Space out consecutive sends through the same Tor exit so use.ai's
+        // per-IP rate limit doesn't trip before we even open the WS. Done
+        // before refresh_session because that also hits use.ai from this IP.
+        let proxy_key = account_proxy.unwrap_or("direct");
+        await_per_proxy_cooldown(proxy_key, per_proxy_cooldown).await;
 
         // Refresh the session cookies before connecting. The
         // __Secure-better-auth.session_data JWT has a 60-second TTL, so
@@ -1559,7 +1626,7 @@ pub async fn stream_completion(
                                 break;
                             }
                             if typ == "rate-limit-error" {
-                                yield Err(anyhow!("rate limit error"));
+                                yield Err(anyhow::Error::from(RateLimitError));
                                 break;
                             }
                         }

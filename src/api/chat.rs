@@ -269,20 +269,27 @@ async fn chat_handler(State(pool): State<AccountPool>, Json(req): Json<ChatReque
                     }
                     Err(e) => {
                         stream_failed = true;
-                        let error_chunk = serde_json::json!({
-                            "id": id,
-                            "object": "chat.completion.chunk",
-                            "created": created,
-                            "model": model_clone,
-                            "choices": [{
-                                "index": 0,
-                                "delta": {
-                                    "content": format!("[ERROR] {}", e)
-                                },
-                                "finish_reason": null,
-                            }]
-                        });
-                        yield Ok(Event::default().data(error_chunk.to_string()));
+                        // A use.ai rate-limit error must not leak into the
+                        // model's content stream. Either it was already
+                        // retried transparently upstream, or (mid-stream) we
+                        // just end the reply cleanly. Other errors stay
+                        // visible as an [ERROR] delta for debuggability.
+                        if !crate::direct::is_stream_rate_limit_error(&e) {
+                            let error_chunk = serde_json::json!({
+                                "id": id,
+                                "object": "chat.completion.chunk",
+                                "created": created,
+                                "model": model_clone,
+                                "choices": [{
+                                    "index": 0,
+                                    "delta": {
+                                        "content": format!("[ERROR] {}", e)
+                                    },
+                                    "finish_reason": null,
+                                }]
+                            });
+                            yield Ok(Event::default().data(error_chunk.to_string()));
+                        }
                         break;
                     }
                 }

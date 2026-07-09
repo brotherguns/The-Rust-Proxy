@@ -432,7 +432,11 @@ async fn handler(State(pool): State<AccountPool>, Json(req): Json<AnthropicReque
                             }
                         }
                         Err(e) => {
-                            stream_error = Some(e.to_string());
+                            // Don't leak a use.ai rate-limit error into the
+                            // content stream; just end the reply cleanly.
+                            if !crate::direct::is_stream_rate_limit_error(&e) {
+                                stream_error = Some(e.to_string());
+                            }
                             break;
                         }
                     }
@@ -730,16 +734,20 @@ async fn handler(State(pool): State<AccountPool>, Json(req): Json<AnthropicReque
                         }
                     }
                     Err(e) => {
-                        // Send error as text delta (or just stop)
-                        let delta = serde_json::json!({
-                            "type": "content_block_delta",
-                            "index": 0,
-                            "delta": {
-                                "type": "text_delta",
-                                "text": format!("[ERROR] {}", e),
-                            }
-                        });
-                        yield Ok(axum::response::sse::Event::default().data(delta.to_string()));
+                        // A use.ai rate-limit error is not surfaced into the
+                        // content stream; the reply just ends. Other errors
+                        // stay visible as an [ERROR] text delta.
+                        if !crate::direct::is_stream_rate_limit_error(&e) {
+                            let delta = serde_json::json!({
+                                "type": "content_block_delta",
+                                "index": 0,
+                                "delta": {
+                                    "type": "text_delta",
+                                    "text": format!("[ERROR] {}", e),
+                                }
+                            });
+                            yield Ok(axum::response::sse::Event::default().data(delta.to_string()));
+                        }
                         break;
                     }
                 }
